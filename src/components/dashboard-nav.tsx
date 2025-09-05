@@ -16,7 +16,9 @@ import {
   Users2
 } from "lucide-react"
 import { getSettings } from "@/lib/data"
-import type { SchoolSettings } from "@/lib/types"
+import type { SchoolSettings, User } from "@/lib/types"
+import { getSession } from "@/lib/session"
+import { useSession } from "@/hooks/use-session"
 
 import {
   SidebarHeader,
@@ -26,21 +28,22 @@ import {
   SidebarMenuButton,
 } from "@/components/ui/sidebar"
 
-const menuItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/classes", label: "Classes", icon: BookOpen },
-  { href: "/dashboard/students", label: "Students", icon: Users },
-  { href: "/dashboard/accounting", label: "Accounting", icon: Banknote },
-  { href: "/dashboard/exams", label: "Exams", icon: FileText },
-  { href: "/dashboard/results", label: "Results", icon: ClipboardList },
-  { href: "/dashboard/users", label: "Users", icon: Users2 },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+const allMenuItems = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ['admin', 'accountant', 'exam'] },
+  { href: "/dashboard/classes", label: "Classes", icon: BookOpen, roles: ['admin', 'exam'] },
+  { href: "/dashboard/students", label: "Students", icon: Users, roles: ['admin', 'exam'] },
+  { href: "/dashboard/accounting", label: "Accounting", icon: Banknote, roles: ['admin', 'accountant'] },
+  { href: "/dashboard/exams", label: "Exams", icon: FileText, roles: ['admin', 'exam'] },
+  { href: "/dashboard/results", label: "Results", icon: ClipboardList, roles: ['admin', 'exam'] },
+  { href: "/dashboard/users", label: "Users", icon: Users2, roles: ['admin'] },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings, roles: ['admin'] },
 ]
 
 export function DashboardNav() {
   const pathname = usePathname();
   const [settings, setSettings] = React.useState<SchoolSettings | null>(null);
-
+  const { session } = useSession();
+  
   React.useEffect(() => {
     getSettings().then(setSettings);
   }, []);
@@ -51,6 +54,14 @@ export function DashboardNav() {
     }
     return pathname.startsWith(href);
   };
+
+  const userRole = session?.role;
+
+  const menuItems = React.useMemo(() => {
+    if (!userRole) return [];
+    return allMenuItems.filter(item => item.roles.includes(userRole));
+  }, [userRole]);
+
 
   return (
     <>

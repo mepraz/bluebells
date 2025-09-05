@@ -36,6 +36,7 @@ export async function authenticate(prevState: string | undefined, formData: Form
         const session = await getSession();
         session.isLoggedIn = true;
         session.username = user.username;
+        session.role = user.role;
         await session.save();
 
     } catch (error) {
@@ -63,6 +64,7 @@ export async function getUsers(): Promise<User[]> {
         id: u._id.toString(),
         username: u.username,
         passwordHash: u.passwordHash,
+        role: u.role || 'admin', // default to admin for old users
     }));
 }
 
@@ -81,6 +83,7 @@ export async function createUser(formData: FormData): Promise<void> {
     await db.collection('users').insertOne({
         username,
         passwordHash,
+        role: 'admin', // New users created from UI are admins by default
     });
 }
 
@@ -188,6 +191,16 @@ export async function addClass(formData: FormData): Promise<void> {
   }
   await db.collection('classes').insertOne({ name, section, fees: defaultFees });
 }
+
+export async function updateClass(classId: string, name: string, section: string): Promise<void> {
+    if (!ObjectId.isValid(classId)) return;
+    const db = await getDb();
+    await db.collection('classes').updateOne(
+        { _id: new ObjectId(classId) },
+        { $set: { name, section } }
+    );
+}
+
 
 export async function updateClassFees(classId: string, newFees: Partial<ClassFees>): Promise<void> {
     if (!ObjectId.isValid(classId)) return;
@@ -557,19 +570,29 @@ export async function addSubject(classId: string, name: string, fullMarksTheory:
     });
 }
 
-export async function updateSubject(subjectId: string, fullMarksTheory: number, fullMarksPractical: number): Promise<void> {
+export async function updateSubject(subjectId: string, name: string, fullMarksTheory: number, fullMarksPractical: number): Promise<void> {
     if (!ObjectId.isValid(subjectId)) return;
     const db = await getDb();
     await db.collection('subjects').updateOne(
         { _id: new ObjectId(subjectId) },
         {
             $set: {
+                name,
                 fullMarksTheory,
                 fullMarksPractical,
             }
         }
     );
 }
+
+export async function deleteSubject(subjectId: string): Promise<void> {
+    if (!ObjectId.isValid(subjectId)) return;
+    const db = await getDb();
+    await db.collection('subjects').deleteOne({ _id: new ObjectId(subjectId) });
+    // Also delete associated results
+    await db.collection('results').deleteMany({ subjectId: new ObjectId(subjectId) });
+}
+
 
 export async function getResultsForExam(examId: string): Promise<Result[]> {
   if (!ObjectId.isValid(examId)) return [];

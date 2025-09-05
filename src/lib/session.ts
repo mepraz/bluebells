@@ -14,6 +14,7 @@ export const sessionOptions: SessionOptions = {
 export interface SessionData {
     isLoggedIn: boolean;
     username: string;
+    role: 'admin' | 'accountant' | 'exam';
 }
 
 export async function getSession() {

@@ -1,4 +1,5 @@
 
+
 "use client"
 import * as React from "react"
 import { PageHeader } from "@/components/page-header"
@@ -22,8 +23,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { getClasses, addClass, updateClassFees } from "@/lib/data"
-import { Edit, PlusCircle, Save, Loader2 } from "lucide-react"
+import { getClasses, addClass, updateClass, updateClassFees } from "@/lib/data"
+import { Edit, PlusCircle, Save, Loader2, Pencil } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import type { Class, ClassFees } from "@/lib/types"
@@ -90,6 +91,60 @@ function AddClassDialog({ onClassAdded }: { onClassAdded: () => void }) {
       </DialogContent>
     </Dialog>
   )
+}
+
+function EditClassDialog({ studentClass, onClassUpdated }: { studentClass: Class, onClassUpdated: () => void }) {
+    const { toast } = useToast();
+    const [isOpen, setIsOpen] = React.useState(false);
+    const [isLoading, setIsLoading] = React.useState(false);
+    const [name, setName] = React.useState(studentClass.name);
+    const [section, setSection] = React.useState(studentClass.section);
+
+    const handleUpdate = async () => {
+        setIsLoading(true);
+        try {
+            await updateClass(studentClass.id, name, section);
+            toast({ title: "Success", description: "Class updated successfully." });
+            onClassUpdated();
+            setIsOpen(false);
+        } catch (error) {
+            console.error(error);
+            toast({ variant: "destructive", title: "Error", description: "Failed to update class." });
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    return (
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7">
+                    <Pencil className="h-4 w-4"/>
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Edit Class: {studentClass.name}{studentClass.section && ` - ${studentClass.section}`}</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div>
+                        <Label htmlFor="edit-name">Class Name</Label>
+                        <Input id="edit-name" value={name} onChange={(e) => setName(e.target.value)} />
+                    </div>
+                    <div>
+                        <Label htmlFor="edit-section">Section</Label>
+                        <Input id="edit-section" value={section} onChange={(e) => setSection(e.target.value)} />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button onClick={handleUpdate} disabled={isLoading}>
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Changes
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
 }
 
 
@@ -231,7 +286,10 @@ export default function ClassesPage() {
               const totalFees = Object.values(cls.fees).reduce((acc, fee) => acc + (fee || 0), 0);
               return (
                 <TableRow key={cls.id}>
-                  <TableCell className="font-medium">{getDisplayName(cls)}</TableCell>
+                  <TableCell className="font-medium flex items-center gap-2">
+                    {getDisplayName(cls)}
+                    <EditClassDialog studentClass={cls} onClassUpdated={fetchData} />
+                  </TableCell>
                   <TableCell className="text-right">
                     रु{totalFees.toLocaleString()}
                   </TableCell>
@@ -252,7 +310,10 @@ export default function ClassesPage() {
           return (
             <Card key={cls.id}>
               <CardHeader>
-                <CardTitle>{getDisplayName(cls)}</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle>{getDisplayName(cls)}</CardTitle>
+                    <EditClassDialog studentClass={cls} onClassUpdated={fetchData} />
+                  </div>
               </CardHeader>
               <CardContent>
                   <div className="flex justify-between items-center">

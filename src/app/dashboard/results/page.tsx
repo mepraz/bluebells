@@ -14,6 +14,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
   Accordion,
   AccordionContent,
   AccordionItem,
@@ -31,8 +42,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
-import { getClasses, getSubjects, getExams, addSubject, updateSubject } from "@/lib/data"
-import { PlusCircle, Save, Loader2, ChevronsRight, Pencil } from "lucide-react"
+import { getClasses, getSubjects, getExams, addSubject, updateSubject, deleteSubject } from "@/lib/data"
+import { PlusCircle, Save, Loader2, ChevronsRight, Pencil, Trash2 } from "lucide-react"
 import type { Class, Subject, Exam } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -44,13 +55,14 @@ function EditSubjectDialog({ subject, onSubjectUpdated }: { subject: Subject; on
   const { toast } = useToast();
   const [isOpen, setIsOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [name, setName] = React.useState(subject.name);
   const [theoryFm, setTheoryFm] = React.useState(subject.fullMarksTheory);
   const [practicalFm, setPracticalFm] = React.useState(subject.fullMarksPractical);
 
   const handleUpdate = async () => {
     setIsLoading(true);
     try {
-      await updateSubject(subject.id, theoryFm, practicalFm);
+      await updateSubject(subject.id, name, theoryFm, practicalFm);
       toast({ title: "Success", description: "Subject updated successfully." });
       onSubjectUpdated();
       setIsOpen(false);
@@ -65,17 +77,21 @@ function EditSubjectDialog({ subject, onSubjectUpdated }: { subject: Subject; on
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-         <Button variant="outline" size="sm">
-            <Pencil className="mr-2 h-3 w-3 md:mr-2 md:h-4 md:w-4" />
+         <Button variant="outline" size="sm" className="h-7 w-7 p-0 md:h-auto md:w-auto md:px-3 md:py-1">
+            <Pencil className="h-3 w-3 md:mr-2 md:h-4 md:w-4" />
             <span className="hidden md:inline">Edit</span>
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit Subject: {subject.name}</DialogTitle>
-          <DialogDescription>Update the full marks for this subject.</DialogDescription>
+          <DialogDescription>Update the details for this subject.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
+           <div>
+            <Label htmlFor="subjectName">Subject Name</Label>
+            <Input id="subjectName" type="text" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
           <div>
             <Label htmlFor="theoryFm">Theory Full Marks</Label>
             <Input id="theoryFm" type="number" value={theoryFm} onChange={(e) => setTheoryFm(Number(e.target.value))} />
@@ -93,6 +109,51 @@ function EditSubjectDialog({ subject, onSubjectUpdated }: { subject: Subject; on
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DeleteSubjectDialog({ subjectId, onSubjectDeleted }: { subjectId: string; onSubjectDeleted: () => void; }) {
+  const { toast } = useToast();
+  const [isLoading, setIsLoading] = React.useState(false);
+  
+  const handleDelete = async () => {
+    setIsLoading(true);
+    try {
+      await deleteSubject(subjectId);
+      toast({ title: "Success", description: "Subject deleted successfully." });
+      onSubjectDeleted();
+    } catch (error) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete subject." });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+     <AlertDialog>
+        <AlertDialogTrigger asChild>
+             <Button variant="destructive" size="sm" className="h-7 w-7 p-0 md:h-auto md:w-auto md:px-3 md:py-1">
+                <Trash2 className="h-3 w-3 md:mr-2 md:h-4 md:w-4" />
+                <span className="hidden md:inline">Delete</span>
+            </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete the subject and all associated result entries.
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDelete} disabled={isLoading}>
+                    {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Continue
+                </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+     </AlertDialog>
   );
 }
 
@@ -189,8 +250,9 @@ function ManageSubjects() {
                                   <TableCell>{s.name}</TableCell>
                                   <TableCell className="text-center">{s.fullMarksTheory}</TableCell>
                                   <TableCell className="text-center">{s.fullMarksPractical}</TableCell>
-                                  <TableCell className="text-right">
+                                  <TableCell className="text-right space-x-2">
                                     <EditSubjectDialog subject={s} onSubjectUpdated={fetchData} />
+                                    <DeleteSubjectDialog subjectId={s.id} onSubjectDeleted={fetchData} />
                                   </TableCell>
                               </TableRow>
                           ))}
@@ -202,20 +264,18 @@ function ManageSubjects() {
                 <div className="md:hidden space-y-3">
                    {subjects.filter(s => s.classId === c.id).map(s => (
                        <Card key={s.id}>
-                           <CardHeader className="flex flex-row items-center justify-between p-4">
-                               <CardTitle className="text-base">{s.name}</CardTitle>
-                               <EditSubjectDialog subject={s} onSubjectUpdated={fetchData} />
+                           <CardHeader className="flex flex-row items-start justify-between p-4">
+                               <div>
+                                  <CardTitle className="text-base">{s.name}</CardTitle>
+                                   <div className="text-sm text-muted-foreground mt-2">
+                                     <span>Theory F.M: {s.fullMarksTheory}</span> | <span>Practical F.M: {s.fullMarksPractical}</span>
+                                   </div>
+                               </div>
+                               <div className="flex gap-2">
+                                  <EditSubjectDialog subject={s} onSubjectUpdated={fetchData} />
+                                  <DeleteSubjectDialog subjectId={s.id} onSubjectDeleted={fetchData} />
+                               </div>
                            </CardHeader>
-                           <CardContent className="p-4 pt-0 text-sm">
-                               <div className="flex justify-between">
-                                   <span className="text-muted-foreground">Theory F.M:</span>
-                                   <span className="font-medium">{s.fullMarksTheory}</span>
-                               </div>
-                               <div className="flex justify-between">
-                                   <span className="text-muted-foreground">Practical F.M:</span>
-                                   <span className="font-medium">{s.fullMarksPractical}</span>
-                               </div>
-                           </CardContent>
                        </Card>
                    ))}
                 </div>
@@ -326,5 +386,3 @@ export default function ResultsPage() {
     </div>
   )
 }
-
-    

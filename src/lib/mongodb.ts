@@ -11,22 +11,34 @@ if (!MONGODB_URI) {
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
 
-async function seedDefaultUser(db: Db) {
+async function seedDefaultUsers(db: Db) {
     const usersCollection = db.collection('users');
-    const userCount = await usersCollection.countDocuments();
+    
+    const usersToSeed = [
+        { username: 'bluebell', password: 'bluebell123', role: 'admin' },
+        { username: 'account', password: 'bluebellacc', role: 'accountant' },
+        { username: 'exam', password: 'bluebellexam', role: 'exam' }
+    ];
 
-    if (userCount === 0) {
-        console.log("No users found. Seeding default admin user...");
-        const username = 'bluebell';
-        const password = 'bluebell123';
-        const passwordHash = await bcrypt.hash(password, 10);
+    for (const userData of usersToSeed) {
+        const userExists = await usersCollection.findOne({ username: userData.username });
+        if (!userExists) {
+            console.log(`Seeding user: ${userData.username}`);
+            const passwordHash = await bcrypt.hash(userData.password, 10);
+            await usersCollection.insertOne({
+                username: userData.username,
+                passwordHash: passwordHash,
+                role: userData.role
+            });
+            console.log(`User '${userData.username}' created with role '${userData.role}'.`);
+        }
+    }
 
-        await usersCollection.insertOne({
-            username,
-            passwordHash
-        });
-        console.log(`Default user '${username}' with password '${password}' created.`);
-        console.log("Please change this password after your first login.");
+    // Ensure the original admin user has the 'admin' role if it exists from a previous version
+    const adminUser = await usersCollection.findOne({ username: 'bluebell' });
+    if (adminUser && !adminUser.role) {
+        await usersCollection.updateOne({ _id: adminUser._id }, { $set: { role: 'admin' } });
+        console.log("Updated 'bluebell' user to have 'admin' role.");
     }
 }
 
@@ -44,8 +56,8 @@ export async function connectToDatabase() {
 
   const db = client.db(MONGODB_DB);
 
-  // Seed the database with a default user if it's empty
-  await seedDefaultUser(db);
+  // Seed the database with default users if they don't exist
+  await seedDefaultUsers(db);
 
   cachedClient = client;
   cachedDb = db;
