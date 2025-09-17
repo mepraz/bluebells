@@ -1,22 +1,12 @@
+
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { StudentBill } from "@/lib/types";
 import { format } from 'date-fns';
 
-function loadImage(url: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous'; // Important for CORS
-      img.onload = () => resolve(img);
-      img.onerror = (err) => reject(err);
-      img.src = url;
-    });
-}
-
 export async function generateBillsPdf(bills: StudentBill[]) {
   const doc = new jsPDF();
-  const schoolLogo = bills[0]?.school?.schoolLogoUrl ? await loadImage(bills[0].school.schoolLogoUrl) : null;
-
+  
   for (const [index, bill] of bills.entries()) {
     if (index > 0) {
       doc.addPage();
@@ -25,9 +15,6 @@ export async function generateBillsPdf(bills: StudentBill[]) {
     const { school, student, class: studentClass, invoice, previousDues } = bill;
 
     // --- Header ---
-    if (schoolLogo) {
-      doc.addImage(schoolLogo, "PNG", 15, 10, 25, 25);
-    }
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
     doc.text(school.schoolName || "School Name", doc.internal.pageSize.getWidth() / 2, 20, { align: "center" });

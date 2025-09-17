@@ -1,16 +1,7 @@
+
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import type { StudentBill, ClassFees, SchoolSettings } from "@/lib/types";
-
-function loadImage(url: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => resolve(img);
-      img.onerror = (err) => reject(err);
-      img.src = url;
-    });
-}
 
 // A simple number-to-words converter for demonstration
 function toWords(num: number): string {
@@ -30,7 +21,7 @@ function toWords(num: number): string {
     return str.trim() + ' only';
 }
 
-function drawBillSlip(doc: jsPDF, bill: StudentBill, school: SchoolSettings, schoolLogo: HTMLImageElement | null, x: number, y: number) {
+function drawBillSlip(doc: jsPDF, bill: StudentBill, school: SchoolSettings, x: number, y: number) {
     const slipWidth = 95;
     const slipHeight = 138; 
     const margin = 5;
@@ -42,9 +33,6 @@ function drawBillSlip(doc: jsPDF, bill: StudentBill, school: SchoolSettings, sch
     doc.rect(x, y, slipWidth, slipHeight);
 
     // --- Header ---
-    if (schoolLogo) {
-        doc.addImage(schoolLogo, "PNG", innerX, innerY, 10, 10);
-    }
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
     doc.text(school.schoolName || "School Name", x + slipWidth / 2, innerY + 3, { align: "center" });
@@ -117,7 +105,6 @@ export async function generateBulkBillSlipsPdf(bills: StudentBill[]) {
     if (!school) {
         throw new Error("School settings not found.");
     }
-    const schoolLogo = school.schoolLogoUrl ? await loadImage(school.schoolLogoUrl) : null;
     
     const pageHeight = doc.internal.pageSize.getHeight();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -135,7 +122,7 @@ export async function generateBulkBillSlipsPdf(bills: StudentBill[]) {
             y = 5;
         }
 
-        drawBillSlip(doc, bill, school, schoolLogo, x, y);
+        drawBillSlip(doc, bill, school, x, y);
         
         billCount++;
         

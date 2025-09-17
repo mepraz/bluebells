@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/sidebar"
 import { DashboardNav } from "@/components/dashboard-nav"
 import { logout } from "@/lib/data"
+import { User as UserIcon } from "lucide-react"
 
 export default function DashboardLayout({
   children,
@@ -43,8 +44,9 @@ export default function DashboardLayout({
                   className="overflow-hidden rounded-full ml-auto"
                 >
                   <Avatar>
-                    <AvatarImage src="https://picsum.photos/32/32" alt="Admin" data-ai-hint="person face" />
-                    <AvatarFallback>AD</AvatarFallback>
+                    <AvatarFallback>
+                      <UserIcon/>
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>

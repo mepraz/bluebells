@@ -14,7 +14,6 @@ export interface Student {
   name: string;
   rollNumber?: number;
   classId: string;
-  profilePicture: string;
   address?: string;
   openingBalance?: number;
   inTuition?: boolean;
@@ -39,35 +38,10 @@ export interface Class {
   fees: ClassFees;
 }
 
-export interface Payment {
-  id: string;
-  studentId: string;
-  amount: number;
-  date: Date;
-  invoiceId: string;
-}
-
-export interface Subject {
-  id:string;
-  name: string;
-  classId: string;
-  fullMarksTheory: number;
-  fullMarksPractical: number;
-}
-
-export interface Exam {
-  id: string;
-  name: string;
-  date: Date;
-}
-
-export interface Result {
-  id: string;
-  examId: string;
-  studentId: string;
-  subjectId: string;
-  theoryMarks?: number;
-  practicalMarks?: number;
+export interface PaymentTransaction {
+    id: string;
+    amount: number;
+    date: Date;
 }
 
 export interface InvoiceLineItem {
@@ -83,7 +57,7 @@ export interface Invoice {
   year: number; // e.g., 2081
   lineItems: InvoiceLineItem[];
   totalBilled: number;
-  payments: Payment[];
+  payments: PaymentTransaction[];
   totalPaid: number;
   balance: number;
   createdAt: Date;
@@ -100,7 +74,6 @@ export interface StudentFeeSummary {
 
 export interface SchoolSettings {
   schoolName?: string;
-  schoolLogoUrl?: string;
   schoolAddress?: string;
   schoolPhone?: string;
 }
@@ -111,6 +84,7 @@ export interface StudentBill {
     class: Class;
     invoice: Invoice;
     previousDues: number;
+    payment?: { amount: number; date: Date };
   }
 
 export interface ClassMonthlySummary {

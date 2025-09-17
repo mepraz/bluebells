@@ -14,10 +14,10 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { getStudents, getClassById, getInvoiceForMonth, createOrUpdateInvoice, addPayment, getSettings, bulkCreateInvoices, checkInvoicesExistForMonth } from "@/lib/data"
-import type { StudentFeeSummary, Class, Student, Invoice, ClassFees, StudentBill, ClassMonthlySummary } from "@/lib/types"
+import type { StudentFeeSummary, Class, Student, Invoice, ClassFees, StudentBill, ClassMonthlySummary, PaymentTransaction } from "@/lib/types"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { ArrowLeft, PlusCircle, Download, ArrowBigLeft, ArrowBigRight } from "lucide-react"
+import { ArrowLeft, PlusCircle, Download, ArrowBigLeft, ArrowBigRight, Printer } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -35,6 +35,7 @@ import { Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { generateBillsPdf } from "@/components/pdf-bill"
 import { generateBulkBillSlipsPdf } from "@/components/pdf-bulk-bill"
+import { generateReceiptPdf } from "@/components/pdf-receipt"
 import { getNepaliDate } from "@/lib/nepali-date";
 
 const NEPALI_MONTHS = ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
@@ -52,9 +53,12 @@ async function getFeeSummaryForClass(classId: string, month: string, year: numbe
   
     const summaries = await Promise.all(students.map(async (student) => {
       const invoice = await getInvoiceForMonth(student.id, month, year);
-      const overallBalance = invoice ? invoice.balance : (student.openingBalance || 0);
+      const latestInvoice = await getLatestInvoice(student.id);
+      const overallBalance = latestInvoice ? latestInvoice.balance : (student.openingBalance || 0);
+
       
       let status: 'Paid' | 'Partial' | 'Unpaid' | 'Overpaid';
+
       if (!invoice) {
         status = 'Unpaid';
       } else if (overallBalance <= 0) {
@@ -77,7 +81,7 @@ async function getFeeSummaryForClass(classId: string, month: string, year: numbe
         student,
         class: studentClass,
         latestInvoice: invoice,
-        totalPaidOverall: invoice?.totalPaid || 0,
+        totalPaidOverall: latestInvoice?.totalPaid || 0,
         overallBalance,
         status,
       };
@@ -95,6 +99,7 @@ function ManageInvoiceDialog({ summary, onActionComplete, month, year }: { summa
   const { toast } = useToast();
   const [isOpen, setIsOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [paymentAmount, setPaymentAmount] = React.useState('');
   
   const studentClass = summary.class;
   const student = summary.student;
@@ -127,15 +132,30 @@ function ManageInvoiceDialog({ summary, onActionComplete, month, year }: { summa
     }
   }
 
-  async function handleAddPayment(formData: FormData) {
+  async function handlePaymentAction(print: boolean) {
     setIsLoading(true);
     try {
-        const amount = Number(formData.get('amount'));
+        const amount = Number(paymentAmount);
         if (!latestInvoice) {
             throw new Error("Cannot add payment without an invoice.");
         }
-        await addPayment(student.id, latestInvoice.id, amount);
+        const paymentRecord = await addPayment(student.id, latestInvoice.id, amount);
         toast({ title: "Success", description: "Payment recorded successfully." });
+
+        if(print) {
+            const settings = await getSettings();
+            const previousDues = latestInvoice.lineItems.find(li => li.feeType === 'Previous Dues')?.amount || 0;
+            const bill: StudentBill = {
+                school: settings,
+                student: summary.student,
+                class: summary.class,
+                invoice: { ...latestInvoice, balance: latestInvoice.balance - amount }, // Pass the updated balance
+                previousDues,
+                payment: paymentRecord,
+            };
+            await generateReceiptPdf(bill);
+        }
+
         onActionComplete();
         setIsOpen(false);
     } catch (error) {
@@ -145,7 +165,7 @@ function ManageInvoiceDialog({ summary, onActionComplete, month, year }: { summa
         setIsLoading(false);
     }
   }
-
+  
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
@@ -199,22 +219,27 @@ function ManageInvoiceDialog({ summary, onActionComplete, month, year }: { summa
             </form>
 
             {/* --- Record Payment Form --- */}
-            <form action={handleAddPayment} className="space-y-4">
+            <div className="space-y-4">
                 <h3 className="font-semibold text-lg border-b pb-2">Record Payment</h3>
                  <p className="text-sm text-muted-foreground">
-                    {latestInvoice ? `Current Balance: रु${summary.overallBalance.toLocaleString()}` : "No invoice found for this month. Please generate one first."}
+                    {summary.latestInvoice ? `Current Balance: रु${summary.overallBalance.toLocaleString()}` : "No invoice found for this month. Please generate one first."}
                  </p>
                 <div>
                     <Label htmlFor="amount">Amount Paid (NPR)</Label>
-                    <Input id="amount" name="amount" type="number" placeholder="e.g., 5000" required/>
+                    <Input id="amount" name="amount" type="number" placeholder="e.g., 5000" required value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} />
                 </div>
                 <DialogFooter>
-                    <Button type="submit" disabled={!latestInvoice || isLoading}>
+                     <Button type="button" disabled={!summary.latestInvoice || isLoading || !paymentAmount} onClick={() => handlePaymentAction(true)} variant="outline">
+                         {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                         <Printer className="mr-2 h-4 w-4"/>
+                        Save & Print
+                    </Button>
+                    <Button type="button" disabled={!summary.latestInvoice || isLoading || !paymentAmount} onClick={() => handlePaymentAction(false)}>
                          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Save Payment
                     </Button>
                 </DialogFooter>
-            </form>
+            </div>
         </div>
       </DialogContent>
     </Dialog>

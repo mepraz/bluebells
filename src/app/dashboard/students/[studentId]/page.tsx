@@ -2,10 +2,10 @@
 
 "use client";
 
-import { getStudentById, getClassById, getInvoicesForStudent, getLatestInvoice, addPayment } from "@/lib/data";
+import { getStudentById, getClassById, getInvoicesForStudent, getLatestInvoice, addPayment, updateStudent, getClasses, getSettings } from "@/lib/data";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Table,
   TableBody,
@@ -17,9 +17,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, IndianRupee } from "lucide-react";
+import { ArrowLeft, Loader2, IndianRupee, User as UserIcon, Edit, Printer } from "lucide-react";
 import * as React from "react";
-import type { Student, Class, Invoice } from "@/lib/types";
+import type { Student, Class, Invoice, PaymentTransaction, StudentBill } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -32,23 +32,127 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { generateReceiptPdf } from "@/components/pdf-receipt";
+
+
+function EditStudentDialog({ student, classes, onStudentUpdated }: { student: Student; classes: Class[]; onStudentUpdated: () => void; }) {
+    const { toast } = useToast();
+    const [isOpen, setIsOpen] = React.useState(false);
+    const [isLoading, setIsLoading] = React.useState(false);
+    
+    async function handleUpdate(formData: FormData) {
+        setIsLoading(true);
+        try {
+            await updateStudent(student.id, formData);
+            toast({ title: "Success", description: "Student profile updated." });
+            onStudentUpdated();
+            setIsOpen(false);
+        } catch (error) {
+            console.error(error);
+            toast({ variant: "destructive", title: "Error", description: "Failed to update student." });
+        } finally {
+            setIsLoading(false);
+        }
+    }
+    
+    const getDisplayName = (c: Class) => c.section ? `${c.name} - ${c.section}` : c.name;
+
+    return (
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                    <Edit className="mr-2 h-4 w-4"/>
+                    Edit Profile
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <form action={handleUpdate}>
+                    <DialogHeader>
+                        <DialogTitle>Edit Student: {student.name}</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div>
+                            <Label htmlFor="name">Full Name</Label>
+                            <Input id="name" name="name" defaultValue={student.name} required />
+                        </div>
+                         <div>
+                            <Label htmlFor="rollNumber">Roll Number</Label>
+                            <Input id="rollNumber" name="rollNumber" type="number" defaultValue={student.rollNumber} />
+                        </div>
+                        <div>
+                            <Label htmlFor="classId">Class</Label>
+                            <Select name="classId" defaultValue={student.classId} required>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a class" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {classes.map(cls => (
+                                        <SelectItem key={cls.id} value={cls.id}>{getDisplayName(cls)}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div>
+                            <Label htmlFor="address">Address</Label>
+                            <Input id="address" name="address" defaultValue={student.address} />
+                        </div>
+                         <div>
+                            <Label htmlFor="openingBalance">Opening Balance</Label>
+                            <Input id="openingBalance" name="openingBalance" type="number" defaultValue={student.openingBalance} />
+                        </div>
+                        <div className="flex items-center space-x-2">
+                             <Checkbox id="inTuition" name="inTuition" defaultChecked={student.inTuition}/>
+                             <Label htmlFor="inTuition">In Tuition?</Label>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button type="submit" disabled={isLoading}>
+                            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
+                            Save Changes
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    )
+}
 
 
 function PaymentDialog({ student, latestInvoice, onPaymentSuccess }: { student: Student | null, latestInvoice: Invoice | null, onPaymentSuccess: () => void }) {
     const { toast } = useToast();
     const [isOpen, setIsOpen] = React.useState(false);
     const [isLoading, setIsLoading] = React.useState(false);
+    const [paymentAmount, setPaymentAmount] = React.useState('');
 
-    async function handlePayment(formData: FormData) {
+    async function handlePaymentAction(print: boolean) {
         if (!student || !latestInvoice) return;
         
         setIsLoading(true);
         try {
-            const amount = Number(formData.get("amount"));
-            await addPayment(student.id, latestInvoice.id, amount);
+            const amount = Number(paymentAmount);
+            const paymentRecord = await addPayment(student.id, latestInvoice.id, amount);
             toast({ title: "Success", description: "Payment recorded successfully." });
+
+            if (print) {
+                const [settings, sClass] = await Promise.all([getSettings(), getClassById(student.classId)]);
+                if (!sClass) throw new Error("Class not found for receipt");
+                
+                const bill: StudentBill = {
+                    school: settings,
+                    student: student,
+                    class: sClass,
+                    invoice: { ...latestInvoice, balance: latestInvoice.balance - amount }, // Pass the updated balance
+                    previousDues: 0, // Not relevant for a simple receipt
+                    payment: paymentRecord,
+                };
+                await generateReceiptPdf(bill);
+            }
+
             onPaymentSuccess();
             setIsOpen(false);
+            setPaymentAmount('');
         } catch (error) {
             console.error(error);
             toast({ variant: "destructive", title: "Error", description: "Failed to record payment." });
@@ -66,24 +170,27 @@ function PaymentDialog({ student, latestInvoice, onPaymentSuccess }: { student: 
                 </Button>
             </DialogTrigger>
             <DialogContent>
-                <form action={handlePayment}>
-                    <DialogHeader>
-                        <DialogTitle>Record Payment for {student?.name}</DialogTitle>
-                        <DialogDescription>
-                            Current Balance: रु{latestInvoice?.balance.toLocaleString()}
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4">
-                        <Label htmlFor="amount">Amount Paid</Label>
-                        <Input id="amount" name="amount" type="number" placeholder="Enter amount" required />
-                    </div>
-                    <DialogFooter>
-                        <Button type="submit" disabled={isLoading}>
-                            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            Save Payment
-                        </Button>
-                    </DialogFooter>
-                </form>
+                <DialogHeader>
+                    <DialogTitle>Record Payment for {student?.name}</DialogTitle>
+                    <DialogDescription>
+                        Current Balance: रु{latestInvoice?.balance.toLocaleString()}
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                    <Label htmlFor="amount">Amount Paid</Label>
+                    <Input id="amount" name="amount" type="number" placeholder="Enter amount" required value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} />
+                </div>
+                <DialogFooter className="sm:justify-between gap-2">
+                     <Button type="button" disabled={isLoading || !paymentAmount} onClick={() => handlePaymentAction(true)} variant="outline">
+                         {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                         <Printer className="mr-2 h-4 w-4"/>
+                        Save & Print
+                    </Button>
+                    <Button type="button" disabled={isLoading || !paymentAmount} onClick={() => handlePaymentAction(false)}>
+                        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save Payment
+                    </Button>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     )
@@ -94,6 +201,7 @@ export default function StudentProfilePage({ params }: { params: { studentId: st
   const studentId = React.use(params).studentId;
   const [student, setStudent] = React.useState<Student | null>(null);
   const [studentClass, setStudentClass] = React.useState<Class | null>(null);
+  const [classes, setClasses] = React.useState<Class[]>([]);
   const [invoices, setInvoices] = React.useState<Invoice[]>([]);
   const [latestInvoice, setLatestInvoice] = React.useState<Invoice | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -109,14 +217,16 @@ export default function StudentProfilePage({ params }: { params: { studentId: st
       }
       setStudent(studentData);
 
-      const [sClass, invoicesData, latestInv] = await Promise.all([
+      const [sClass, invoicesData, latestInv, allClasses] = await Promise.all([
         getClassById(studentData.classId),
         getInvoicesForStudent(studentData.id),
-        getLatestInvoice(studentData.id)
+        getLatestInvoice(studentData.id),
+        getClasses()
       ]);
       setStudentClass(sClass);
       setInvoices(invoicesData);
       setLatestInvoice(latestInv);
+      setClasses(allClasses);
 
     } catch (error) {
       console.error("Failed to fetch student profile", error);
@@ -162,6 +272,7 @@ export default function StudentProfilePage({ params }: { params: { studentId: st
     <div>
       <PageHeader title="Student Profile">
         <div className="flex items-center gap-2">
+            <EditStudentDialog student={student} classes={classes} onStudentUpdated={fetchData}/>
             <PaymentDialog student={student} latestInvoice={latestInvoice} onPaymentSuccess={fetchData} />
             <Button asChild variant="outline">
                 <Link href="/dashboard/students">
@@ -178,8 +289,9 @@ export default function StudentProfilePage({ params }: { params: { studentId: st
             <Card>
                 <CardHeader className="items-center text-center">
                     <Avatar className="w-24 h-24 mb-4">
-                        <AvatarImage src={student.profilePicture} alt={student.name} data-ai-hint="person face" />
-                        <AvatarFallback>{student.name.charAt(0)}</AvatarFallback>
+                        <AvatarFallback className="text-4xl">
+                          <UserIcon className="h-12 w-12"/>
+                        </AvatarFallback>
                     </Avatar>
                     <CardTitle className="text-2xl">{student.name}</CardTitle>
                     <CardDescription>Student ID: {student.sid}</CardDescription>

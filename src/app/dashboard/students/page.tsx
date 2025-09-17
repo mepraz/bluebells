@@ -1,7 +1,6 @@
 
 
 "use client"
-import Image from "next/image"
 import Link from "next/link"
 import * as React from "react"
 import { PageHeader } from "@/components/page-header"
@@ -33,7 +32,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { getStudents, getClasses, addStudent } from "@/lib/data"
-import { PlusCircle, Loader2 } from "lucide-react"
+import { PlusCircle, Loader2, User as UserIcon } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import type { Student, Class } from "@/lib/types"
 import {
@@ -43,6 +42,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 
 function AddStudentDialog({ classes, onStudentAdded }: { classes: Class[], onStudentAdded: () => void }) {
@@ -221,14 +221,11 @@ export default function StudentsPage() {
                                     </TableCell>
                                     <TableCell className="font-medium">
                                     <Link href={`/dashboard/students/${student.id}`} className="flex items-center gap-3">
-                                        <Image 
-                                            src={student.profilePicture} 
-                                            width={40} 
-                                            height={40} 
-                                            alt={student.name} 
-                                            className="rounded-full"
-                                            data-ai-hint="person face"
-                                        />
+                                        <Avatar className="h-10 w-10">
+                                            <AvatarFallback>
+                                                <UserIcon/>
+                                            </AvatarFallback>
+                                        </Avatar>
                                         {student.name}
                                         </Link>
                                     </TableCell>

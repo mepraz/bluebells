@@ -4,7 +4,7 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { connectToDatabase } from '@/lib/mongodb';
-import { Class, Student, Payment, Subject, Result, ClassFees, Invoice, InvoiceLineItem, SchoolSettings, Exam, User } from '@/lib/types';
+import { Class, Student, Subject, Result, ClassFees, Invoice, InvoiceLineItem, SchoolSettings, Exam, User, PaymentTransaction } from '@/lib/types';
 import { redirect } from 'next/navigation';
 import { getSession, sessionOptions } from './session';
 import { cookies } from 'next/headers';
@@ -107,37 +107,11 @@ export async function getSettings(): Promise<SchoolSettings> {
 export async function updateSettings(formData: FormData): Promise<void> {
     const db = await getDb();
     const schoolName = formData.get('schoolName') as string;
-    const schoolLogoUrl = formData.get('schoolLogoUrl') as string;
     const schoolAddress = formData.get('schoolAddress') as string;
     const schoolPhone = formData.get('schoolPhone') as string;
-    const apiKey = process.env.IMGBB_API_KEY;
-
-    let finalLogoUrl = schoolLogoUrl;
-
-    const logoFile = formData.get('schoolLogo') as File;
-    if (logoFile && logoFile.size > 0 && apiKey) {
-        const imageForm = new FormData();
-        imageForm.append('image', logoFile);
-
-        try {
-            const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
-                method: 'POST',
-                body: imageForm,
-            });
-            const result = await response.json();
-            if (result.success) {
-                finalLogoUrl = result.data.url;
-            } else {
-                console.error('Failed to upload image to ImgBB:', result.error.message);
-            }
-        } catch (error) {
-            console.error('Error uploading image:', error);
-        }
-    }
     
     const settingsData: SchoolSettings = {};
     if (schoolName) settingsData.schoolName = schoolName;
-    if (finalLogoUrl) settingsData.schoolLogoUrl = finalLogoUrl;
     if (schoolAddress) settingsData.schoolAddress = schoolAddress;
     if (schoolPhone) settingsData.schoolPhone = schoolPhone;
 
@@ -244,7 +218,6 @@ export async function getStudents(filters: { classId?: string, name?: string } =
     name: s.name,
     rollNumber: s.rollNumber,
     classId: s.classId.toString(),
-    profilePicture: s.profilePicture,
     address: s.address,
     openingBalance: s.openingBalance || 0,
     inTuition: s.inTuition || false,
@@ -262,7 +235,6 @@ export async function getStudentById(studentId: string): Promise<Student | null>
       name: student.name,
       rollNumber: student.rollNumber,
       classId: student.classId.toString(),
-      profilePicture: student.profilePicture,
       address: student.address,
       openingBalance: student.openingBalance || 0,
       inTuition: student.inTuition || false,
@@ -289,28 +261,40 @@ export async function addStudent(formData: FormData): Promise<void> {
         address,
         openingBalance: Number(openingBalance) || 0,
         inTuition,
-        profilePicture: `https://picsum.photos/100/100?random=${Math.floor(Math.random() * 100)}`
     });
 }
 
-// --- Accounting / Invoicing ---
-export async function getPayments(filters: { studentId?: string; invoiceId?: string } = {}): Promise<Payment[]> {
+export async function updateStudent(studentId: string, formData: FormData): Promise<void> {
+    if (!ObjectId.isValid(studentId)) return;
+    
     const db = await getDb();
-    const query: any = {};
-    if (filters.studentId && ObjectId.isValid(filters.studentId)) {
-      query.studentId = new ObjectId(filters.studentId);
-    }
-    if (filters.invoiceId && ObjectId.isValid(filters.invoiceId)) {
-      query.invoiceId = new ObjectId(filters.invoiceId);
-    }
-    const payments = await db.collection('payments').find(query).toArray();
-    return payments.map(p => ({
-      id: p._id.toString(),
-      studentId: p.studentId.toString(),
-      amount: p.amount,
-      date: new Date(p.date),
-      invoiceId: p.invoiceId ? p.invoiceId.toString() : ''
-    }));
+
+    const updateData: Partial<Student> & { classId: ObjectId } = {
+        name: formData.get('name') as string,
+        rollNumber: Number(formData.get('rollNumber')),
+        classId: new ObjectId(formData.get('classId') as string),
+        address: formData.get('address') as string,
+        openingBalance: Number(formData.get('openingBalance')),
+        inTuition: formData.get('inTuition') === 'on',
+    };
+
+    await db.collection('students').updateOne(
+        { _id: new ObjectId(studentId) },
+        { $set: updateData }
+    );
+}
+
+// --- Accounting / Invoicing ---
+export async function getPayments(studentId: string): Promise<PaymentTransaction[]> {
+    const db = await getDb();
+    const invoices = await db.collection('invoices').find({ studentId: new ObjectId(studentId) }).toArray();
+    let allPayments: PaymentTransaction[] = [];
+    invoices.forEach(invoice => {
+        if(invoice.payments) {
+            allPayments = [...allPayments, ...invoice.payments.map((p: any) => ({...p, id: p._id.toString()}))]
+        }
+    });
+    return allPayments;
 }
   
 
@@ -319,8 +303,7 @@ export async function getInvoicesForStudent(studentId: string): Promise<Invoice[
     if (!ObjectId.isValid(studentId)) return [];
     const invoices = await db.collection('invoices').find({ studentId: new ObjectId(studentId) }).sort({ year: -1, createdAt: -1 }).toArray();
     return Promise.all(invoices.map(async i => {
-      // Payments are now directly on the invoice object, but we keep this for older data structure compatibility if needed
-      const payments = i.payments?.map((p: any) => ({ ...p, date: new Date(p.date) })) || [];
+      const payments = i.payments?.map((p: any) => ({ ...p, date: new Date(p.date), id: p._id.toString() })) || [];
       return {
         id: i._id.toString(),
         studentId: i.studentId.toString(),
@@ -356,7 +339,7 @@ export async function getInvoiceForMonth(studentId: string, month: string, year:
         year: invoiceData.year,
         lineItems: invoiceData.lineItems,
         totalBilled: invoiceData.totalBilled,
-        payments: invoiceData.payments?.map((p: any) => ({ ...p, date: new Date(p.date) })) || [],
+        payments: invoiceData.payments?.map((p: any) => ({ ...p, date: new Date(p.date), id: p._id.toString() })) || [],
         totalPaid: invoiceData.totalPaid || 0,
         balance: invoiceData.balance,
         createdAt: invoiceData.createdAt,
@@ -410,8 +393,11 @@ export async function createOrUpdateInvoice(
   
     const currentMonthFeesTotal = lineItems.reduce((acc, item) => acc + item.amount, 0);
 
-    if (previousBalance !== 0) {
-      lineItems.unshift({ feeType: 'Previous Dues', amount: previousBalance });
+    // Filter out old Previous Dues before adding new one
+    const filteredLineItems = lineItems.filter(item => item.feeType !== 'Previous Dues');
+    
+    if (previousBalance > 0) { // Only add previous dues if there is a balance
+      filteredLineItems.unshift({ feeType: 'Previous Dues', amount: previousBalance });
     }
   
     const totalBilled = currentMonthFeesTotal + previousBalance;
@@ -424,7 +410,7 @@ export async function createOrUpdateInvoice(
         { _id: existingInvoice._id },
         {
           $set: {
-            lineItems,
+            lineItems: filteredLineItems,
             totalBilled,
             balance: newBalance,
             createdAt: new Date(),
@@ -438,7 +424,7 @@ export async function createOrUpdateInvoice(
         classId: new ObjectId(classId),
         month,
         year,
-        lineItems,
+        lineItems: filteredLineItems,
         totalBilled,
         totalPaid: 0,
         balance: totalBilled,
@@ -473,12 +459,12 @@ export async function bulkCreateInvoices(
     return { created: createdCount, updated: updatedCount };
 }
   
-export async function addPayment(studentId: string, invoiceId: string, amount: number): Promise<void> {
+export async function addPayment(studentId: string, invoiceId: string, amount: number): Promise<PaymentTransaction> {
     const db = await getDb();
     const invoiceObjectId = new ObjectId(invoiceId);
   
-    const paymentRecord = {
-        _id: new ObjectId(),
+    const paymentRecord: PaymentTransaction = {
+        id: new ObjectId().toString(),
         amount,
         date: new Date(),
     };
@@ -491,7 +477,11 @@ export async function addPayment(studentId: string, invoiceId: string, amount: n
                 balance: -amount,
             },
             $push: {
-                payments: paymentRecord
+                payments: {
+                    _id: new ObjectId(paymentRecord.id),
+                    amount: paymentRecord.amount,
+                    date: paymentRecord.date,
+                }
             }
         }
     );
@@ -499,6 +489,25 @@ export async function addPayment(studentId: string, invoiceId: string, amount: n
     if (result.modifiedCount === 0) {
         throw new Error("Failed to find and update the invoice.");
     }
+    
+    // Adjust balance on all subsequent invoices for this student
+    const studentObjectId = new ObjectId(studentId);
+    const updatedInvoice = await db.collection('invoices').findOne({ _id: invoiceObjectId });
+    if (!updatedInvoice) throw new Error("Could not retrieve updated invoice");
+
+    const subsequentInvoices = await db.collection('invoices').find({
+        studentId: studentObjectId,
+        createdAt: { $gt: updatedInvoice.createdAt }
+    }).toArray();
+    
+    for (const inv of subsequentInvoices) {
+        // Here we just adjust the balance based on the new payment, not re-calculating everything
+        await db.collection('invoices').updateOne(
+            { _id: inv._id },
+            { $inc: { balance: -amount } }
+        );
+    }
+    return paymentRecord;
 }
 
 export async function checkInvoicesExistForMonth(classId: string, month: string, year: number): Promise<boolean> {

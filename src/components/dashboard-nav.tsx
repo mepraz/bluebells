@@ -2,7 +2,6 @@
 "use client"
 import Link from "next/link"
 import * as React from "react"
-import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
@@ -68,11 +67,7 @@ export function DashboardNav() {
       <SidebarHeader>
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-            {settings?.schoolLogoUrl ? (
-                <Image src={settings.schoolLogoUrl} alt="School Logo" width={24} height={24} className="rounded-sm" />
-            ) : (
-                <GraduationCap className="h-5 w-5 text-sidebar-primary-foreground" />
-            )}
+            <GraduationCap className="h-5 w-5 text-sidebar-primary-foreground" />
           </div>
           <span className="text-lg font-semibold text-sidebar-foreground">{settings?.schoolName || 'Bluebells ERP'}</span>
         </div>

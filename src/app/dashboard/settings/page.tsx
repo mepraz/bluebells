@@ -1,7 +1,7 @@
+
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,40 +18,17 @@ export default function SettingsPage() {
   const router = useRouter();
   const [settings, setSettings] = React.useState<SchoolSettings | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
-  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    getSettings().then(data => {
-        setSettings(data);
-        if (data.schoolLogoUrl) {
-            setPreviewUrl(data.schoolLogoUrl);
-        }
-    });
+    getSettings().then(setSettings);
   }, []);
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
 
   async function handleSaveSettings(formData: FormData) {
     setIsLoading(true);
     try {
-      if (settings?.schoolLogoUrl) {
-        formData.append('schoolLogoUrl', settings.schoolLogoUrl);
-      }
       await updateSettings(formData);
       toast({ title: "Success", description: "Settings updated successfully." });
-      // Force a reload of the current page to reflect changes
       router.refresh();
-      // Also, we might want to tell the layout to refetch settings.
-      // A simple way is a full reload, but can be optimized with global state.
       window.location.reload();
     } catch (error) {
       console.error(error);
@@ -107,15 +84,6 @@ export default function SettingsPage() {
                     defaultValue={settings.schoolAddress}
                     placeholder="e.g., Kathmandu, Nepal"
                 />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="schoolLogo">School Logo</Label>
-              <Input id="schoolLogo" name="schoolLogo" type="file" accept="image/*" onChange={handleFileChange} />
-              {previewUrl && (
-                <div className="mt-4 rounded-md border p-4 w-40 h-40 flex items-center justify-center">
-                    <Image src={previewUrl} alt="Logo Preview" width={128} height={128} className="max-h-full max-w-full object-contain" />
-                </div>
-              )}
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={isLoading}>

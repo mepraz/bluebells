@@ -1,19 +1,9 @@
+
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { SchoolSettings, StudentMarksheet } from "@/lib/types";
 import { getNepaliDate } from "@/lib/nepali-date";
 import { format } from "date-fns";
-
-// Helper function to load images from a URL
-function loadImage(url: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous'; // This is important for fetching images from other domains
-      img.onload = () => resolve(img);
-      img.onerror = (err) => reject(err);
-      img.src = url;
-    });
-}
 
 // Grading logic based on the provided image
 function getGradeDetails(percentage: number): { grade: string; gpa: number; remarks: string } {
@@ -43,7 +33,6 @@ const gradingScale = [
 
 export async function generateMarksheetPdf(school: SchoolSettings, marksheets: StudentMarksheet[]) {
   const doc = new jsPDF();
-  const schoolLogo = school.schoolLogoUrl ? await loadImage(school.schoolLogoUrl) : null;
   const pageHeight = doc.internal.pageSize.getHeight();
   const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -54,9 +43,6 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
     const { student, class: studentClass, exam, results } = marksheet;
 
     // --- Header ---
-    if (schoolLogo) {
-      doc.addImage(schoolLogo, "PNG", 15, 10, 20, 20);
-    }
     doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
     doc.text(school.schoolName?.toUpperCase() || "SCHOOL NAME", pageWidth / 2, 15, { align: "center" });
