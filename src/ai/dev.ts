@@ -1,4 +1,4 @@
 import { config } from 'dotenv';
 config();
 
-import '@/ai/flows/generate-water-quality-report.ts';
+// This file is intentionally left blank after removing the AI suggester.

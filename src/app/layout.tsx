@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { Toaster } from "@/components/ui/toaster"
+import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'AquaSwift - Pure Water, Pure Life',
-  description: 'High-quality water purifiers for your home and office.',
+  title: 'Bluebells ERP',
+  description: 'A simple ERP for educational institutions.',
 };
 
 export default function RootLayout({

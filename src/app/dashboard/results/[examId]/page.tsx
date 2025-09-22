@@ -1,5 +1,3 @@
-
-
 "use client";
 
 import * as React from "react"
@@ -229,27 +227,27 @@ function EnterMarks({ exam } : { exam: Exam }) {
 
         {!loading && selectedClassId && subjectsForClass.length > 0 && (
           <>
-            <div className="hidden md:block overflow-x-auto rounded-lg border">
+            <div className="hidden md:block relative h-[60vh] overflow-auto rounded-lg border">
                 <Table className="min-w-full">
                     <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
                             <TableHead className="sticky left-0 bg-muted z-20 w-48 whitespace-nowrap">Student Name</TableHead>
                             {subjectsForClass.map(subject => (
-                                <TableHead key={subject.id} className="text-center min-w-48 whitespace-nowrap">{subject.name}</TableHead>
+                                <TableHead key={subject.id} className="text-center min-w-[200px] whitespace-nowrap">{subject.name}</TableHead>
                             ))}
-                            <TableHead className="text-center">Total</TableHead>
+                            <TableHead className="text-center sticky right-0 bg-muted z-20">Total</TableHead>
                         </TableRow>
                         <TableRow>
                             <TableHead className="sticky left-0 bg-muted z-20"></TableHead>
                             {subjectsForClass.map(subject => (
                                 <TableHead key={`${subject.id}-sub`} className="p-0">
                                     <div className="flex">
-                                        <div className="w-1/2 text-center font-medium p-2 border-r">Theory (F.M. {subject.fullMarksTheory})</div>
-                                        <div className="w-1/2 text-center font-medium p-2">Practical (F.M. {subject.fullMarksPractical})</div>
+                                        <div className="w-1/2 text-center font-medium p-2 border-r">Th. (F.M. {subject.fullMarksTheory})</div>
+                                        {subject.fullMarksPractical > 0 && <div className="w-1/2 text-center font-medium p-2">Pr. (F.M. {subject.fullMarksPractical})</div>}
                                     </div>
                                 </TableHead>
                             ))}
-                             <TableHead></TableHead>
+                             <TableHead className="sticky right-0 bg-muted z-20"></TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -268,12 +266,12 @@ function EnterMarks({ exam } : { exam: Exam }) {
                                             <TableCell key={subject.id} className="p-1">
                                                 <div className="flex gap-1">
                                                     <Input type="number" placeholder="Th." value={result.theoryMarks} onChange={(e) => handleMarksChange(student.id, subject.id, 'theory', e.target.value)} className="text-center" />
-                                                    <Input type="number" placeholder="Pr." value={result.practicalMarks} onChange={(e) => handleMarksChange(student.id, subject.id, 'practical', e.target.value)} className="text-center" />
+                                                    {subject.fullMarksPractical > 0 && <Input type="number" placeholder="Pr." value={result.practicalMarks} onChange={(e) => handleMarksChange(student.id, subject.id, 'practical', e.target.value)} className="text-center" />}
                                                 </div>
                                             </TableCell>
                                         )
                                     })}
-                                    <TableCell className="text-center font-bold">{totalMarks}</TableCell>
+                                    <TableCell className="text-center font-bold sticky right-0 bg-card z-10">{totalMarks}</TableCell>
                                 </TableRow>
                             )
                         })}
@@ -310,10 +308,10 @@ function EnterMarks({ exam } : { exam: Exam }) {
                                                                   <Label htmlFor={`theory-${student.id}-${subject.id}`} className="text-xs text-muted-foreground">Theory (F.M. {subject.fullMarksTheory})</Label>
                                                                   <Input id={`theory-${student.id}-${subject.id}`} type="number" placeholder="Marks" value={result.theoryMarks} onChange={(e) => handleMarksChange(student.id, subject.id, 'theory', e.target.value)} />
                                                               </div>
-                                                               <div>
+                                                               {subject.fullMarksPractical > 0 && <div>
                                                                   <Label htmlFor={`practical-${student.id}-${subject.id}`} className="text-xs text-muted-foreground">Practical (F.M. {subject.fullMarksPractical})</Label>
                                                                   <Input id={`practical-${student.id}-${subject.id}`} type="number" placeholder="Marks" value={result.practicalMarks} onChange={(e) => handleMarksChange(student.id, subject.id, 'practical', e.target.value)} />
-                                                              </div>
+                                                              </div>}
                                                           </div>
                                                      </div>
                                                  )

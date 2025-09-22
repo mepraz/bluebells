@@ -1,41 +1,132 @@
-import type { LucideIcon } from 'lucide-react';
 
-export type Product = {
-  id: string;
-  _id: string;
-  name: string;
-  description: string;
-  price: number;
-  imageUrl: string;
-  features: string[];
-  aiHint: string;
-};
 
-export type Service = {
-  id:string;
-  name: string;
-  description: string;
-  icon: LucideIcon;
-};
-
-export type AdminUser = {
+export interface User {
   id: string;
   username: string;
-  role: string;
-  lastLogin: string;
-};
+  passwordHash: string;
+  role: 'admin' | 'accountant' | 'exam';
+}
 
-export type Testimonial = {
-  _id: string;
+
+export interface Student {
+  id: string;
+  sid: string;
   name: string;
-  company: string;
-  quote: string;
-  imageUrl: string;
-  aiHint: string;
-};
+  rollNumber?: number;
+  classId: string;
+  address?: string;
+  openingBalance?: number;
+  inTuition?: boolean;
+}
 
-export type CompanyDetails = {
-    _id: string;
+export interface ClassFees {
+  registration: number;
+  monthly: number;
+  exam: number;
+  sports: number;
+  music: number;
+  tuition: number;
+  stationery: number;
+  tieBelt: number;
+  medical: number;
+}
+
+export interface Class {
+  id: string;
+  name:string;
+  section: string;
+  fees: ClassFees;
+}
+
+export interface PaymentTransaction {
+    id: string;
+    amount: number;
+    date: Date | string;
+}
+
+export interface InvoiceLineItem {
+  feeType: keyof Omit<ClassFees, 'medical'> | 'Medical' | 'Previous Dues' | string;
+  amount: number;
+}
+
+export interface Invoice {
+  id: string;
+  studentId: string;
+  classId: string;
+  month: string; // e.g., "Baisakh"
+  year: number; // e.g., 2081
+  lineItems: InvoiceLineItem[];
+  totalBilled: number;
+  payments: PaymentTransaction[];
+  totalPaid: number;
+  balance: number;
+  createdAt: Date;
+}
+
+export interface StudentFeeSummary {
+  student: Student;
+  class: Class;
+  latestInvoice: Invoice | null;
+  totalPaidOverall: number;
+  overallBalance: number;
+  status: 'Paid' | 'Partial' | 'Unpaid' | 'Overpaid';
+}
+
+export interface SchoolSettings {
+  schoolName?: string;
+  schoolAddress?: string;
+  schoolPhone?: string;
+  schoolLogoUrl?: string;
+}
+
+export interface StudentBill {
+    school: SchoolSettings;
+    student: Student;
+    class: Class;
+    invoice: Invoice;
+    previousDues: number;
+    payment?: { amount: number; date: Date | string };
+  }
+
+export interface ClassMonthlySummary {
+  totalBilled: number;
+  totalCollected: number;
+  totalDues: number;
+}
+
+export interface Exam {
+  id: string;
+  name: string;
+  date: Date;
+}
+
+export interface Subject {
+    id: string;
     name: string;
-    logoUrl: string;
-};
+    classId: string;
+    fullMarksTheory: number;
+    fullMarksPractical: number;
+}
+
+export interface Result {
+    id: string;
+    examId: string;
+    studentId: string;
+    subjectId: string;
+    theoryMarks: number;
+    practicalMarks: number;
+}
+
+
+export interface StudentMarksheet {
+  student: Student;
+  class: Class;
+  exam: Exam;
+  results: {
+    subjectName: string;
+    fullMarksTheory: number;
+    fullMarksPractical: number;
+    theoryMarks: number;
+    practicalMarks: number;
+  }[];
+}

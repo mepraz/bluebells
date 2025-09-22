@@ -1,33 +1,66 @@
-import { MongoClient } from 'mongodb'
+import { MongoClient, Db } from 'mongodb';
+import * as bcrypt from 'bcrypt';
 
-if (!process.env.MONGODB_URI) {
-  throw new Error('Invalid/Missing environment variable: "MONGODB_URI"')
+const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_DB = 'school';
+
+if (!MONGODB_URI) {
+  throw new Error('Please define the MONGODB_URI environment variable inside .env');
 }
 
-const uri = process.env.MONGODB_URI
-const options = {}
+let cachedClient: MongoClient | null = null;
+let cachedDb: Db | null = null;
 
-let client
-let clientPromise: Promise<MongoClient>
+async function seedDefaultUsers(db: Db) {
+    const usersCollection = db.collection('users');
+    
+    const usersToSeed = [
+        { username: 'bluebell', password: 'bluebell123', role: 'admin' },
+        { username: 'account', password: 'bluebellacc', role: 'accountant' },
+        { username: 'exam', password: 'bluebellexam', role: 'exam' }
+    ];
 
-if (process.env.NODE_ENV === 'development') {
-  // In development mode, use a global variable so that the value
-  // is preserved across module reloads caused by HMR (Hot Module Replacement).
-  let globalWithMongo = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>
-  }
+    for (const userData of usersToSeed) {
+        const userExists = await usersCollection.findOne({ username: userData.username });
+        if (!userExists) {
+            console.log(`Seeding user: ${userData.username}`);
+            const passwordHash = await bcrypt.hash(userData.password, 10);
+            await usersCollection.insertOne({
+                username: userData.username,
+                passwordHash: passwordHash,
+                role: userData.role
+            });
+            console.log(`User '${userData.username}' created with role '${userData.role}'.`);
+        }
+    }
 
-  if (!globalWithMongo._mongoClientPromise) {
-    client = new MongoClient(uri, options)
-    globalWithMongo._mongoClientPromise = client.connect()
-  }
-  clientPromise = globalWithMongo._mongoClientPromise
-} else {
-  // In production mode, it's best to not use a global variable.
-  client = new MongoClient(uri, options)
-  clientPromise = client.connect()
+    // Ensure the original admin user has the 'admin' role if it exists from a previous version
+    const adminUser = await usersCollection.findOne({ username: 'bluebell' });
+    if (adminUser && !adminUser.role) {
+        await usersCollection.updateOne({ _id: adminUser._id }, { $set: { role: 'admin' } });
+        console.log("Updated 'bluebell' user to have 'admin' role.");
+    }
 }
 
-// Export a module-scoped MongoClient promise. By doing this in a
-// separate module, the client can be shared across functions.
-export default clientPromise
+
+export async function connectToDatabase() {
+  if (cachedClient && cachedDb) {
+    return { client: cachedClient, db: cachedDb };
+  }
+
+  const client = new MongoClient(MONGODB_URI!, {
+    tlsAllowInvalidCertificates: true,
+  });
+
+  await client.connect();
+
+  const db = client.db(MONGODB_DB);
+
+  // Seed the database with default users if they don't exist
+  await seedDefaultUsers(db);
+
+  cachedClient = client;
+  cachedDb = db;
+
+  return { client, db };
+}
