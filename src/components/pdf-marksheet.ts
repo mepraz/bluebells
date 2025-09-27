@@ -4,7 +4,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { SchoolSettings, StudentMarksheet, Subject, Result } from "@/lib/types";
 import { getNepaliDate } from "@/lib/nepali-date";
-import { format } from "date-fns";
 
 async function getClientImageData(url: string): Promise<string | null> {
     try {
@@ -33,6 +32,19 @@ function getGradeDetails(percentage: number): { grade: string; gpa: number; rema
     // Between 35 and 40
     return { grade: 'D', gpa: 1.6, remarks: 'BASIC' };
 }
+
+const NEPALI_MONTHS = ["Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"];
+
+function getDaySuffix(day: number) {
+    if (day > 3 && day < 21) return 'th';
+    switch (day % 10) {
+        case 1: return "st";
+        case 2: return "nd";
+        case 3: return "rd";
+        default: return "th";
+    }
+}
+
 
 export async function generateMarksheetPdf(school: SchoolSettings, marksheets: StudentMarksheet[]) {
   const doc = new jsPDF('p', 'mm', 'a4');
@@ -218,7 +230,7 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
         columnStyles: { 0: { cellWidth: 153 } },
     });
     
-    finalY = (doc as any).lastAutoTable.finalY;
+    const gpaTableFinalY = (doc as any).lastAutoTable.finalY;
 
     const summaryData = [
         ['Total Marks', grandTotalFullMarks.toString(), grandTotalObtainedMarks.toFixed(2)],
@@ -227,7 +239,7 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
     ];
 
     autoTable(doc, {
-        startY: finalY + 5,
+        startY: gpaTableFinalY + 5,
         body: summaryData,
         theme: 'grid',
         tableWidth: 100,
@@ -237,48 +249,40 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
             0: { fontStyle: 'bold' }
         }
     });
-
-    finalY = (doc as any).lastAutoTable.finalY;
+    const summaryBoxFinalY = (doc as any).lastAutoTable.finalY;
     
     if(student.totalAttendance && student.presentAttendance) {
         doc.setFontSize(12);
         doc.setFont("times", "normal");
-        doc.text(`ATTENDENCE: ${student.presentAttendance} / ${student.totalAttendance}`, pageWidth - 15, finalY - 10, { align: 'right' });
+        doc.text(`ATTENDENCE: ${student.presentAttendance} / ${student.totalAttendance}`, pageWidth - 15, gpaTableFinalY + 15, { align: 'right' });
     }
     
     doc.setFontSize(12);
     const nepaliIssueDate = getNepaliDate(new Date());
-    doc.text(`REMARKS:`, 15, finalY + 15);
-    doc.text(`DATE OF ISSUE: ${nepaliIssueDate.year}/${nepaliIssueDate.monthIndex + 1}/${nepaliIssueDate.day}`, 15, finalY + 22);
+    const formattedDate = `${NEPALI_MONTHS[nepaliIssueDate.monthIndex]} ${nepaliIssueDate.day}${getDaySuffix(nepaliIssueDate.day)}, ${nepaliIssueDate.year}`;
+    doc.text(`DATE OF ISSUE: ${formattedDate}`, 15, summaryBoxFinalY + 10);
 
     // --- Footer with Signatures & Seal ---
-    const signatureY = pageHeight - 55;
+    const signatureY = pageHeight - 60;
     doc.setFontSize(12);
 
-    // Left side (Class Teacher, Checked By)
-    doc.line(15, signatureY, 55, signatureY);
-    doc.text("CLASS TEACHER", 35, signatureY + 5, { align: 'center' });
-    
-    const secondSignatureY = signatureY + 15;
-    doc.line(15, secondSignatureY, 55, secondSignatureY);
-    doc.text("CHECKED BY", 35, secondSignatureY + 5, { align: 'center' });
+    doc.line(15, signatureY + 15, 55, signatureY + 15);
+    doc.text("Class Teacher", 35, signatureY + 20, { align: 'center' });
 
-    // Middle (Seal)
     const sealX = pageWidth / 2;
-    const sealY = signatureY + 7;
+    const sealY = signatureY + 2; 
     
+    doc.setLineWidth(0.5);
+    doc.circle(sealX, sealY, 12);
     if (logoData) {
-        doc.setLineWidth(0.5);
-        doc.circle(sealX, sealY, 12);
         doc.addImage(logoData, 'PNG', sealX - 10, sealY - 10, 20, 20);
     }
     doc.setFontSize(8);
     doc.text("SCHOOL SEAL", sealX, sealY + 15, { align: 'center' });
-    doc.setFontSize(12); // Reset font size
+    doc.setFontSize(12);
 
-    // Right side (Principal)
-    doc.line(pageWidth - 55, secondSignatureY, pageWidth - 15, secondSignatureY);
-    doc.text("PRINCIPAL", pageWidth - 35, secondSignatureY + 5, { align: 'center' });
+    doc.line(pageWidth - 55, signatureY + 15, pageWidth - 15, signatureY + 15);
+    doc.text("Principal", pageWidth - 35, signatureY + 20, { align: 'center' });
 
     // --- Final Note ---
     const noteWidth = pageWidth - 20;
@@ -304,4 +308,6 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
   doc.save(fileName);
 }
 
-    
+
+
+
