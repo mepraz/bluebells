@@ -23,14 +23,14 @@ async function getClientImageData(url: string): Promise<string | null> {
 }
 
 function getGradeDetails(percentage: number): { grade: string; gpa: number; remarks: string } {
-    if (isNaN(percentage) || percentage < 0) return { grade: 'NG', gpa: 0.0, remarks: 'NON-GRADED' };
+    if (isNaN(percentage) || percentage < 0 || percentage < 35) return { grade: 'NG', gpa: 0.0, remarks: 'NON-GRADED' };
     if (percentage >= 90) return { grade: 'A+', gpa: 4.0, remarks: 'OUTSTANDING' };
     if (percentage >= 80) return { grade: 'A', gpa: 3.6, remarks: 'EXCELLENT' };
     if (percentage >= 70) return { grade: 'B+', gpa: 3.2, remarks: 'VERY GOOD' };
     if (percentage >= 60) return { grade: 'B', gpa: 2.8, remarks: 'GOOD' };
     if (percentage >= 50) return { grade: 'C+', gpa: 2.4, remarks: 'SATISFACTORY' };
     if (percentage >= 40) return { grade: 'C', gpa: 2.0, remarks: 'ACCEPTABLE' };
-    if (percentage < 35) return { grade: 'NG', gpa: 0.0, remarks: 'NON-GRADED' };
+    // Between 35 and 40
     return { grade: 'D', gpa: 1.6, remarks: 'BASIC' };
 }
 
@@ -126,7 +126,10 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
             return [
                 res.code || '',
                 res.name || '',
-                gradeDetails.grade,
+                fullMarksTheory,
+                fullMarksPractical,
+                obtainedTheory,
+                obtainedPractical,
                 gradeDetails.grade,
                 gradeDetails.remarks,
             ];
@@ -137,7 +140,7 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
     
     const MINIMUM_ROWS = 12;
     while(tableBody.length < MINIMUM_ROWS) {
-        tableBody.push(['', '', '', '', '']);
+        tableBody.push(['', '', '', '', '', '', '', '']);
     }
 
     const extraSubjectBody = mapResultsToTableBody(extraSubjects, true);
@@ -146,21 +149,37 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
     const finalPercentage = grandTotalFullMarks > 0 ? (grandTotalObtainedMarks / grandTotalFullMarks) * 100 : 0;
     const finalGradeDetails = getGradeDetails(finalPercentage);
     
-    autoTable(doc, {
+     autoTable(doc, {
         startY: infoY3 + 3,
         head: [
-            ['CODE', 'SUBJECTS', 'GRADE', 'FINAL\nGRADE', 'REMARKS']
+            [
+                { content: 'CODE', rowSpan: 2 },
+                { content: 'SUBJECTS', rowSpan: 2 },
+                { content: 'FULL MARKS', colSpan: 2 },
+                { content: 'OBTAINED MARKS', colSpan: 2 },
+                { content: 'GRADE', rowSpan: 2 },
+                { content: 'REMARKS', rowSpan: 2 },
+            ],
+            [
+                { content: 'Th.'},
+                { content: 'Pr.'},
+                { content: 'Th.'},
+                { content: 'Pr.'},
+            ]
         ],
         body: tableBody,
         theme: 'grid',
-        headStyles: { fontStyle: 'bold', halign: 'center', fillColor: [255, 255, 255], textColor: 0, lineWidth: 0.1, lineColor: 0, fontSize: 10 },
+        headStyles: { fontStyle: 'bold', halign: 'center', fillColor: [255, 255, 255], textColor: 0, lineWidth: 0.1, lineColor: 0, fontSize: 9 },
         styles: { halign: 'center', lineWidth: 0.1, lineColor: 0, fontSize: 11 },
         columnStyles: {
-            0: { cellWidth: 18 },
-            1: { halign: 'left', cellWidth: 72 },
-            2: { cellWidth: 18 },
-            3: { cellWidth: 18 },
-            4: { halign: 'left', cellWidth: 'auto' }
+            0: { cellWidth: 15 },
+            1: { halign: 'left', cellWidth: 55 },
+            2: { cellWidth: 10 },
+            3: { cellWidth: 10 },
+            4: { cellWidth: 10 },
+            5: { cellWidth: 10 },
+            6: { cellWidth: 18 },
+            7: { halign: 'left', cellWidth: 'auto' }
         },
     });
 
@@ -169,17 +188,20 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
      if (extraSubjects.length > 0) {
         autoTable(doc, {
             startY: finalY,
-            head: [['', 'EXTRA CREDIT SUBJECT', '', '', '']],
+            head: [['', 'EXTRA CREDIT SUBJECT', '', '', '', '', '', '']],
             body: extraSubjectBody,
             theme: 'grid',
             headStyles: { fontStyle: 'bold', halign: 'left', fillColor: [255, 255, 255], textColor: 0, lineWidth: 0.1, lineColor: 0, fontSize: 12 },
             styles: { halign: 'center', lineWidth: 0.1, lineColor: 0, fontSize: 11 },
             columnStyles: {
-                0: { cellWidth: 18 },
-                1: { halign: 'left', cellWidth: 72 },
-                2: { cellWidth: 18 },
-                3: { cellWidth: 18 },
-                4: { halign: 'left', cellWidth: 'auto' }
+                0: { cellWidth: 15 },
+                1: { halign: 'left', cellWidth: 55 },
+                2: { cellWidth: 10 },
+                3: { cellWidth: 10 },
+                4: { cellWidth: 10 },
+                5: { cellWidth: 10 },
+                6: { cellWidth: 18 },
+                7: { halign: 'left', cellWidth: 'auto' }
             },
         });
         finalY = (doc as any).lastAutoTable.finalY;
@@ -193,7 +215,7 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
         ]],
         theme: 'grid',
         styles: { lineWidth: 0.1, lineColor: 0, fontSize: 11 },
-        columnStyles: { 0: { cellWidth: 135 } },
+        columnStyles: { 0: { cellWidth: 153 } },
     });
     
     finalY = (doc as any).lastAutoTable.finalY;
@@ -245,10 +267,9 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
     const sealX = pageWidth / 2;
     const sealY = signatureY + 7;
     
-    doc.setLineWidth(0.5);
-    doc.circle(sealX, sealY, 12); // Outer circle
     if (logoData) {
-        // Place the logo inside the circle
+        doc.setLineWidth(0.5);
+        doc.circle(sealX, sealY, 12);
         doc.addImage(logoData, 'PNG', sealX - 10, sealY - 10, 20, 20);
     }
     doc.setFontSize(8);
@@ -267,9 +288,8 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
     doc.setFont('times', 'normal');
     const splitNotes = doc.splitTextToSize(notes, noteWidth - 4);
     
-    // Calculate height based on font size and line count
     const lineHeight = doc.getLineHeight() / doc.internal.scaleFactor;
-    const noteHeight = (splitNotes.length * lineHeight) + 8; // Add more padding
+    const noteHeight = (splitNotes.length * lineHeight) + 8;
 
     const noteY = pageHeight - 12 - noteHeight;
 
@@ -283,3 +303,5 @@ export async function generateMarksheetPdf(school: SchoolSettings, marksheets: S
 
   doc.save(fileName);
 }
+
+    
