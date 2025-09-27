@@ -1,3 +1,5 @@
+
+
 "use client";
 
 import * as React from "react"
@@ -27,7 +29,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { getClasses, getSubjects, getStudents, getResultsForExam, getSettings, addOrUpdateResult, getClassById, getExamById } from "@/lib/data"
+import { getClasses, getSubjects, getStudents, getResultsForExam, getSettings, addOrUpdateResult, getClassById, getExamById, getMarksheetDataForClass, updateStudentAttendance } from "@/lib/data"
 import { Save, Loader2, Download, ArrowLeft } from "lucide-react"
 import type { Class, Subject, Student, Result, StudentMarksheet, Exam } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast"
@@ -43,6 +45,12 @@ interface ResultData {
   }
 }
 
+interface AttendanceData {
+    [studentId: string]: {
+        present: string | number;
+    }
+}
+
 function EnterMarks({ exam } : { exam: Exam }) {
   const [classes, setClasses] = React.useState<Class[]>([]);
   const [allStudents, setAllStudents] = React.useState<Student[]>([]);
@@ -53,6 +61,8 @@ function EnterMarks({ exam } : { exam: Exam }) {
   const [studentsInClass, setStudentsInClass] = React.useState<Student[]>([]);
   const [subjectsForClass, setSubjectsForClass] = React.useState<Subject[]>([]);
   const [resultsData, setResultsData] = React.useState<ResultData>({});
+  const [attendanceData, setAttendanceData] = React.useState<AttendanceData>({});
+  const [totalAttendance, setTotalAttendance] = React.useState<string | number>('');
 
   const [loading, setLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -76,6 +86,10 @@ function EnterMarks({ exam } : { exam: Exam }) {
       setAllSubjects(subjectsData);
 
       const newResults: ResultData = {};
+      const newAttendance: AttendanceData = {};
+      
+      let classTotalAttendance: number | string = '';
+
       for (const student of studentsData) {
         newResults[student.id] = {};
         for (const subject of subjectsData) {
@@ -85,8 +99,17 @@ function EnterMarks({ exam } : { exam: Exam }) {
             practicalMarks: existingResult?.practicalMarks ?? '',
           };
         }
+         newAttendance[student.id] = {
+            present: student.presentAttendance ?? '',
+        };
+        if (student.totalAttendance && !classTotalAttendance) {
+            classTotalAttendance = student.totalAttendance;
+        }
       }
       setResultsData(newResults);
+      setAttendanceData(newAttendance);
+      setTotalAttendance(classTotalAttendance);
+
 
     } catch (error) {
       console.error(error);
@@ -102,13 +125,28 @@ function EnterMarks({ exam } : { exam: Exam }) {
 
   React.useEffect(() => {
     if (selectedClassId) {
-      setStudentsInClass(allStudents.filter(s => s.classId === selectedClassId));
+      const filteredStudents = allStudents.filter(s => s.classId === selectedClassId);
+      setStudentsInClass(filteredStudents);
       setSubjectsForClass(allSubjects.filter(s => s.classId === selectedClassId));
+       // Reset and repopulate attendance data for the selected class
+      const newAttendance: AttendanceData = {};
+      let classTotalAttendance: number | string = '';
+      for (const student of filteredStudents) {
+        newAttendance[student.id] = { present: student.presentAttendance ?? '' };
+        if (student.totalAttendance && !classTotalAttendance) {
+            classTotalAttendance = student.totalAttendance;
+        }
+      }
+      setAttendanceData(newAttendance);
+      setTotalAttendance(classTotalAttendance);
     } else {
       setStudentsInClass([]);
       setSubjectsForClass([]);
+      setAttendanceData({});
+      setTotalAttendance('');
     }
   }, [selectedClassId, allStudents, allSubjects]);
+
 
   const handleMarksChange = (studentId: string, subjectId: string, type: 'theory' | 'practical', value: string) => {
     const marks = value; 
@@ -124,20 +162,35 @@ function EnterMarks({ exam } : { exam: Exam }) {
     }));
   }
 
+  const handleAttendanceChange = (studentId: string, value: string) => {
+    setAttendanceData(prev => ({
+        ...prev,
+        [studentId]: { present: value }
+    }));
+  }
+
   const handleSaveMarks = async () => {
     setIsSaving(true);
     try {
-      for (const studentId in resultsData) {
-        const studentResults = resultsData[studentId];
+      for (const student of studentsInClass) {
+        // Save marks
+        const studentResults = resultsData[student.id];
         for (const subjectId in studentResults) {
           const { theoryMarks, practicalMarks } = studentResults[subjectId];
           
           if(theoryMarks !== '' || practicalMarks !== '') {
-            await addOrUpdateResult(exam.id, studentId, subjectId, Number(theoryMarks) || 0, Number(practicalMarks) || 0);
+            await addOrUpdateResult(exam.id, student.id, subjectId, Number(theoryMarks) || 0, Number(practicalMarks) || 0);
           }
         }
+        
+        // Save attendance
+        const studentAttendance = attendanceData[student.id];
+        if (studentAttendance && (totalAttendance !== '' || studentAttendance.present !== '')) {
+             await updateStudentAttendance(student.id, Number(totalAttendance) || 0, Number(studentAttendance.present) || 0);
+        }
       }
-      toast({ title: "Success", description: "Marks saved successfully." });
+
+      toast({ title: "Success", description: "Marks and attendance saved successfully." });
       fetchData();
     } catch (error) {
       console.error(error);
@@ -154,27 +207,10 @@ function EnterMarks({ exam } : { exam: Exam }) {
     }
     setIsDownloading(true);
     try {
-        const [schoolSettings, studentClass] = await Promise.all([getSettings(), getClassById(selectedClassId)]);
-        if (!studentClass) throw new Error("Could not fetch class details.");
-
-        const marksheets: StudentMarksheet[] = studentsInClass.map(student => {
-            const resultsForStudent = subjectsForClass.map(subject => {
-                const result = resultsData[student.id]?.[subject.id] || { theoryMarks: 0, practicalMarks: 0 };
-                return {
-                    subjectName: subject.name,
-                    fullMarksTheory: subject.fullMarksTheory,
-                    fullMarksPractical: subject.fullMarksPractical,
-                    theoryMarks: Number(result.theoryMarks) || 0,
-                    practicalMarks: Number(result.practicalMarks) || 0
-                };
-            });
-            return {
-                student,
-                class: studentClass,
-                exam,
-                results: resultsForStudent,
-            };
-        });
+        const [schoolSettings, marksheets] = await Promise.all([
+          getSettings(),
+          getMarksheetDataForClass(exam.id, selectedClassId)
+        ]);
         
         await generateMarksheetPdf(schoolSettings, marksheets);
 
@@ -193,24 +229,33 @@ function EnterMarks({ exam } : { exam: Exam }) {
         <CardDescription>Select a class to enter marks in a spreadsheet-like view.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <Select onValueChange={setSelectedClassId} value={selectedClassId}>
-            <SelectTrigger className="w-full md:w-[280px]">
-              <SelectValue placeholder="Select Class" />
-            </SelectTrigger>
-            <SelectContent>
-              {classes.map(c => <SelectItem key={c.id} value={c.id}>{getDisplayName(c)}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+            <div className="w-full sm:w-[280px] space-y-2">
+                <Label>Select Class</Label>
+                <Select onValueChange={setSelectedClassId} value={selectedClassId}>
+                    <SelectTrigger>
+                    <SelectValue placeholder="Select Class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                    {classes.map(c => <SelectItem key={c.id} value={c.id}>{getDisplayName(c)}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
+             <div className="w-full sm:w-48 space-y-2">
+                <Label htmlFor="total-attendance">Total Working Days</Label>
+                <Input id="total-attendance" type="number" placeholder="e.g. 220" value={totalAttendance} onChange={e => setTotalAttendance(e.target.value)} />
+            </div>
+          </div>
           {selectedClassId && subjectsForClass.length > 0 && (
             <div className="flex gap-2">
                 <Button onClick={handleSaveMarks} disabled={isSaving} className="w-full sm:w-auto">
                     {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save All Marks
+                    Save All
                 </Button>
                 <Button onClick={handleDownloadResults} disabled={isDownloading} variant="outline" className="w-full sm:w-auto">
                     {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                    Download Results
+                    Download
                 </Button>
             </div>
           )}
@@ -232,6 +277,7 @@ function EnterMarks({ exam } : { exam: Exam }) {
                     <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
                             <TableHead className="sticky left-0 bg-muted z-20 w-48 whitespace-nowrap">Student Name</TableHead>
+                             <TableHead className="text-center min-w-[150px] whitespace-nowrap">Present Days</TableHead>
                             {subjectsForClass.map(subject => (
                                 <TableHead key={subject.id} className="text-center min-w-[200px] whitespace-nowrap">{subject.name}</TableHead>
                             ))}
@@ -239,6 +285,7 @@ function EnterMarks({ exam } : { exam: Exam }) {
                         </TableRow>
                         <TableRow>
                             <TableHead className="sticky left-0 bg-muted z-20"></TableHead>
+                            <TableHead></TableHead>
                             {subjectsForClass.map(subject => (
                                 <TableHead key={`${subject.id}-sub`} className="p-0">
                                     <div className="flex">
@@ -260,6 +307,9 @@ function EnterMarks({ exam } : { exam: Exam }) {
                             return (
                                 <TableRow key={student.id}>
                                     <TableCell className="font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{student.name}</TableCell>
+                                    <TableCell className="p-1">
+                                         <Input type="number" placeholder="Days" value={attendanceData[student.id]?.present || ''} onChange={(e) => handleAttendanceChange(student.id, e.target.value)} className="text-center" />
+                                    </TableCell>
                                     {subjectsForClass.map(subject => {
                                         const result = resultsData[student.id]?.[subject.id] || { theoryMarks: '', practicalMarks: '' };
                                         return (
@@ -298,6 +348,15 @@ function EnterMarks({ exam } : { exam: Exam }) {
                                     </AccordionTrigger>
                                     <AccordionContent className="px-4 pb-4">
                                         <div className="space-y-4">
+                                            <div className="p-3 border rounded-md">
+                                                <Label className="font-semibold">Attendance</Label>
+                                                <div className="grid grid-cols-2 gap-2 text-sm mt-2">
+                                                    <div>
+                                                        <Label className="text-xs text-muted-foreground">Present Days</Label>
+                                                        <Input type="number" placeholder="Days" value={attendanceData[student.id]?.present || ''} onChange={(e) => handleAttendanceChange(student.id, e.target.value)} />
+                                                    </div>
+                                                </div>
+                                            </div>
                                             {subjectsForClass.map(subject => {
                                                  const result = resultsData[student.id]?.[subject.id] || { theoryMarks: '', practicalMarks: '' };
                                                  return (

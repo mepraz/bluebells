@@ -4,7 +4,7 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { connectToDatabase } from '@/lib/mongodb';
-import { Class, Student, Subject, Result, ClassFees, Invoice, InvoiceLineItem, SchoolSettings, Exam, User, PaymentTransaction, StudentBill, ClassMonthlySummary } from '@/lib/types';
+import { Class, Student, Subject, Result, ClassFees, Invoice, InvoiceLineItem, SchoolSettings, Exam, User, PaymentTransaction, StudentBill, ClassMonthlySummary, StudentMarksheet } from '@/lib/types';
 import { redirect } from 'next/navigation';
 import { getSession, sessionOptions } from './session';
 import { cookies } from 'next/headers';
@@ -264,6 +264,9 @@ export async function getStudents(filters: { classId?: string, name?: string } =
     address: s.address,
     openingBalance: s.openingBalance || 0,
     inTuition: s.inTuition || false,
+    dob: s.dob,
+    totalAttendance: s.totalAttendance,
+    presentAttendance: s.presentAttendance,
   }));
 }
 
@@ -281,6 +284,9 @@ export async function getStudentById(studentId: string): Promise<Student | null>
       address: student.address,
       openingBalance: student.openingBalance || 0,
       inTuition: student.inTuition || false,
+      dob: student.dob,
+      totalAttendance: student.totalAttendance,
+      presentAttendance: student.presentAttendance,
     };
   }
   
@@ -319,13 +325,27 @@ export async function updateStudent(studentId: string, formData: FormData): Prom
         address: formData.get('address') as string,
         openingBalance: Number(formData.get('openingBalance')),
         inTuition: formData.get('inTuition') === 'on',
+        dob: formData.get('dob') as string,
     };
+
+    // Clean up undefined fields
+    Object.keys(updateData).forEach(key => (updateData[key as keyof typeof updateData] === undefined || isNaN(updateData[key as keyof typeof updateData] as number)) && delete updateData[key as keyof typeof updateData]);
 
     await db.collection('students').updateOne(
         { _id: new ObjectId(studentId) },
         { $set: updateData }
     );
 }
+
+export async function updateStudentAttendance(studentId: string, totalAttendance: number, presentAttendance: number): Promise<void> {
+    if (!ObjectId.isValid(studentId)) return;
+    const db = await getDb();
+    await db.collection('students').updateOne(
+        { _id: new ObjectId(studentId) },
+        { $set: { totalAttendance, presentAttendance } }
+    );
+}
+
 
 // --- Accounting / Invoicing ---
 
@@ -337,12 +357,15 @@ function serializeInvoice(invoice: any): Invoice {
       classId: invoice.classId.toString(),
       month: invoice.month,
       year: invoice.year,
-      lineItems: invoice.lineItems,
+      lineItems: invoice.lineItems.map((li: any) => ({
+          feeType: li.feeType,
+          amount: li.amount,
+      })),
       totalBilled: invoice.totalBilled,
       payments: invoice.payments?.map((p: any) => ({ ...p, date: new Date(p.date).toISOString(), id: p._id.toString() })) || [],
       totalPaid: invoice.totalPaid || 0,
       balance: invoice.balance,
-      createdAt: invoice.createdAt,
+      createdAt: new Date(invoice.createdAt),
     };
   }
 
@@ -352,7 +375,7 @@ export async function getPayments(): Promise<PaymentTransaction[]> {
     let allPayments: PaymentTransaction[] = [];
     invoices.forEach(invoice => {
         if(invoice.payments) {
-            allPayments = [...allPayments, ...invoice.payments.map((p: any) => ({...p, id: p._id.toString()}))]
+            allPayments = [...allPayments, ...invoice.payments.map((p: any) => ({...p, id: p._id.toString(), date: p.date.toISOString() }))]
         }
     });
     return allPayments;
@@ -621,21 +644,6 @@ export async function generateAndDownloadBulkInvoices(
     }
 
     if (bills.length > 0) {
-        // This is tricky because `generateBillsPdf` is client-side code due to `doc.save`
-        // We can't directly call it and expect a download.
-        // A better approach would be to return the data and have the client generate the PDF.
-        // For now, let's assume a workaround or that this function will be refactored.
-        // This will still throw an error if called purely from the server and `doc.save` is used.
-        // The user's error report `FileReader is not defined` proves this is run on the server.
-        
-        // This function will be called from a client component, which will then trigger the download.
-        // But the data preparation happens here. The call to generateBillsPdf must be on the client.
-        // The current implementation is flawed.
-        
-        // Refactoring: `generateAndDownloadBulkInvoices` should return the data,
-        // and the client should call `generateBillsPdf`.
-        
-        // Let's fix the immediate error. We will pre-fetch the logo here.
         await generateBillsPdf(bills, logoBase64);
 
     } else {
@@ -664,19 +672,24 @@ export async function getFeeSummaryForClass(classId: string, month: string, year
         // Find invoices for this student from the prefetched list
         const studentInvoices = allInvoices.filter(inv => inv.studentId.toString() === student.id);
         const invoiceForMonth = studentInvoices.find(inv => inv.month === month && inv.year === year);
-        const latestInvoice = studentInvoices.length > 0 ? studentInvoices[0] : null; // Already sorted by date
+        const latestInvoiceOverall = studentInvoices.length > 0 ? studentInvoices[0] : null;
 
-        const overallBalance = latestInvoice ? latestInvoice.balance : (student.openingBalance || 0);
+        const overallBalance = latestInvoiceOverall ? latestInvoiceOverall.balance : (student.openingBalance || 0);
 
         let status: 'Paid' | 'Partial' | 'Unpaid' | 'Overpaid';
-        if (overallBalance <= 0) {
-            status = 'Paid';
-            if (overallBalance < 0) status = 'Overpaid';
-        } else if (invoiceForMonth && invoiceForMonth.totalPaid > 0) {
-            status = 'Partial';
+        if(invoiceForMonth){
+            if (invoiceForMonth.balance <= 0) {
+                status = 'Paid';
+                if (invoiceForMonth.balance < 0) status = 'Overpaid';
+            } else if (invoiceForMonth.totalPaid > 0) {
+                status = 'Partial';
+            } else {
+                status = 'Unpaid';
+            }
         } else {
             status = 'Unpaid';
         }
+
 
         if (invoiceForMonth) {
             totalBilledMonth += invoiceForMonth.lineItems.reduce((acc: number, item: InvoiceLineItem) => item.feeType !== 'Previous Dues' ? acc + item.amount : acc, 0);
@@ -687,18 +700,76 @@ export async function getFeeSummaryForClass(classId: string, month: string, year
             student,
             class: studentClass,
             latestInvoice: invoiceForMonth ? serializeInvoice(invoiceForMonth) : null,
-            totalPaidOverall: latestInvoice ? latestInvoice.totalPaid : 0, // This is latest invoice paid, not overall. Might need adjustment if logic requires true overall.
             overallBalance,
             status,
         };
     });
 
-    const totalDuesMonth = summaries.reduce((acc, s) => acc + s.overallBalance, 0);
+    const totalDuesMonth = summaries.reduce((acc, s) => {
+        if (s.latestInvoice) {
+            return acc + s.latestInvoice.balance;
+        }
+        return acc + s.overallBalance;
+    }, 0);
+
     const monthlySummary = { totalBilled: totalBilledMonth, totalCollected: totalCollectedMonth, totalDues: totalDuesMonth };
 
     return { summaries, monthlySummary };
 }
 
+export async function getOverallFeeSummary(): Promise<ClassFeeSummary[]> {
+    const db = await getDb();
+    
+    // Fetch all data in parallel
+    const [classesData, studentsData, allInvoicesData] = await Promise.all([
+      getClasses(),
+      getStudents(),
+      db.collection('invoices').find().sort({ createdAt: -1 }).toArray()
+    ]);
+    
+    // Group students and invoices for efficient lookup
+    const studentsByClass = studentsData.reduce((acc, student) => {
+        (acc[student.classId] = acc[student.classId] || []).push(student);
+        return acc;
+    }, {} as Record<string, Student[]>);
+
+    const latestInvoicesByStudent = allInvoicesData.reduce((acc, invoice) => {
+        const studentId = invoice.studentId.toString();
+        if (!acc[studentId]) {
+            acc[studentId] = invoice;
+        }
+        return acc;
+    }, {} as Record<string, any>);
+
+
+    const summaries: ClassFeeSummary[] = classesData.map(c => {
+        const studentsInClass = studentsByClass[c.id] || [];
+        
+        let totalBilled = 0;
+        let totalCollected = 0;
+        let totalDues = 0;
+
+        for (const student of studentsInClass) {
+            const latestInvoice = latestInvoicesByStudent[student.id];
+            if (latestInvoice) {
+                totalBilled += latestInvoice.totalBilled;
+                totalCollected += latestInvoice.totalPaid;
+                totalDues += latestInvoice.balance;
+            } else {
+                 totalDues += student.openingBalance || 0;
+            }
+        }
+        
+        return {
+            class: c,
+            totalBilled,
+            totalCollected,
+            totalDues,
+        };
+    });
+    
+    return summaries;
+}
 
 
 // --- Exam Management ---
@@ -736,19 +807,29 @@ export async function addExam(formData: FormData): Promise<void> {
 
 
 // --- Subject & Result Management ---
-export async function getSubjects(): Promise<Subject[]> {
+export async function getSubjects(filters: { classId?: string } = {}): Promise<Subject[]> {
   const db = await getDb();
-  const subjects = await db.collection('subjects').find().toArray();
+  const query: any = {};
+  if (filters.classId) {
+    if (ObjectId.isValid(filters.classId)) {
+        query.classId = new ObjectId(filters.classId);
+    } else {
+        return [];
+    }
+  }
+  const subjects = await db.collection('subjects').find(query).toArray();
   return subjects.map(s => ({
     id: s._id.toString(),
     name: s.name,
     classId: s.classId.toString(),
     fullMarksTheory: s.fullMarksTheory || 100,
     fullMarksPractical: s.fullMarksPractical || 0,
+    code: s.code || '',
+    isExtra: s.isExtra || false,
   }));
 }
 
-export async function addSubject(classId: string, name: string, fullMarksTheory: number, fullMarksPractical: number): Promise<void> {
+export async function addSubject(classId: string, name: string, fullMarksTheory: number, fullMarksPractical: number, code: string, isExtra: boolean): Promise<void> {
     if (!ObjectId.isValid(classId)) return;
     const db = await getDb();
     await db.collection('subjects').insertOne({
@@ -756,10 +837,12 @@ export async function addSubject(classId: string, name: string, fullMarksTheory:
         classId: new ObjectId(classId),
         fullMarksTheory,
         fullMarksPractical,
+        code,
+        isExtra,
     });
 }
 
-export async function updateSubject(subjectId: string, name: string, fullMarksTheory: number, fullMarksPractical: number): Promise<void> {
+export async function updateSubject(subjectId: string, name: string, fullMarksTheory: number, fullMarksPractical: number, code: string, isExtra: boolean): Promise<void> {
     if (!ObjectId.isValid(subjectId)) return;
     const db = await getDb();
     await db.collection('subjects').updateOne(
@@ -767,8 +850,8 @@ export async function updateSubject(subjectId: string, name: string, fullMarksTh
         {
             $set: {
                 name,
-                fullMarksTheory,
-                fullMarksPractical,
+                code,
+                isExtra,
             }
         }
     );
@@ -813,5 +896,35 @@ export async function addOrUpdateResult(examId: string, studentId: string, subje
     );
 }
 
+// --- Data for Marksheet ---
+export async function getMarksheetDataForClass(examId: string, classId: string): Promise<StudentMarksheet[]> {
+    if (!ObjectId.isValid(examId) || !ObjectId.isValid(classId)) return [];
+
+    const [exam, studentClass, students, subjects, results] = await Promise.all([
+        getExamById(examId),
+        getClassById(classId),
+        getStudents({ classId }),
+        getSubjects({ classId }),
+        getResultsForExam(examId),
+    ]);
+
+    if (!exam || !studentClass) return [];
+    
+    return students.map(student => {
+        const studentResults = results.filter(r => r.studentId === student.id);
+        
+        const mergedResults = studentResults.map(res => {
+            const subject = subjects.find(s => s.id === res.subjectId);
+            return { ...res, ...(subject || {}) } as Result & Subject;
+        }).filter(r => r.name); // Filter out if subject not found
+
+        return {
+            student,
+            class: studentClass,
+            exam,
+            results: mergedResults,
+        };
+    });
+}
 
     

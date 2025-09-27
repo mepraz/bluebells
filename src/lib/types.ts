@@ -17,6 +17,9 @@ export interface Student {
   address?: string;
   openingBalance?: number;
   inTuition?: boolean;
+  dob?: string;
+  totalAttendance?: number;
+  presentAttendance?: number;
 }
 
 export interface ClassFees {
@@ -67,7 +70,6 @@ export interface StudentFeeSummary {
   student: Student;
   class: Class;
   latestInvoice: Invoice | null;
-  totalPaidOverall: number;
   overallBalance: number;
   status: 'Paid' | 'Partial' | 'Unpaid' | 'Overpaid';
 }
@@ -88,7 +90,8 @@ export interface StudentBill {
     payment?: { amount: number; date: Date | string };
   }
 
-export interface ClassMonthlySummary {
+export interface ClassFeeSummary {
+  class: Class;
   totalBilled: number;
   totalCollected: number;
   totalDues: number;
@@ -106,6 +109,8 @@ export interface Subject {
     classId: string;
     fullMarksTheory: number;
     fullMarksPractical: number;
+    code: string;
+    isExtra: boolean;
 }
 
 export interface Result {
@@ -122,11 +127,7 @@ export interface StudentMarksheet {
   student: Student;
   class: Class;
   exam: Exam;
-  results: {
-    subjectName: string;
-    fullMarksTheory: number;
-    fullMarksPractical: number;
-    theoryMarks: number;
-    practicalMarks: number;
-  }[];
+  results: (Result & Subject)[];
 }
+
+    
