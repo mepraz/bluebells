@@ -27,9 +27,9 @@ const nepaliYearData = [
 
 function findNepaliYearData(gregorianYear: number) {
     // A simplified search. For a production app, a more robust search or a full dataset is needed.
-    return nepaliYearData.find(d => d.gregorianStartDate.year === gregorianYear) || 
-           nepaliYearData.find(d => d.gregorianStartDate.year + (d.nepaliStartDate.year - d.gregorianStartDate.year) === gregorianYear + 57) ||
-           nepaliYearData[nepaliYearData.length - 1]; // Fallback to the latest available data
+    return nepaliYearData.find(d => d.gregorianStartDate.year === gregorianYear) ||
+        nepaliYearData.find(d => d.gregorianStartDate.year + (d.nepaliStartDate.year - d.gregorianStartDate.year) === gregorianYear + 57) ||
+        nepaliYearData[nepaliYearData.length - 1]; // Fallback to the latest available data
 }
 
 export function getNepaliDate(gregorianDate: Date): NepaliDate {
@@ -37,38 +37,44 @@ export function getNepaliDate(gregorianDate: Date): NepaliDate {
     const gregMonth = gregorianDate.getMonth() + 1;
     const gregDay = gregorianDate.getDate();
 
-    const nepaliYearInfo = findNepaliYearData(gregYear) || nepaliYearData.find(d => d.nepaliStartDate.year === 2081)!;
-    
+    let nepaliYearInfo = findNepaliYearData(gregYear) || nepaliYearData.find(d => d.nepaliStartDate.year === 2081)!;
+
+    let startDate = new Date(nepaliYearInfo.gregorianStartDate.year, nepaliYearInfo.gregorianStartDate.month - 1, nepaliYearInfo.gregorianStartDate.day);
+    const targetDate = new Date(gregYear, gregMonth - 1, gregDay);
+
+    // If the target date is before the start of the Nepali year, use the previous year's data
+    if (targetDate.getTime() < startDate.getTime()) {
+        nepaliYearInfo = findNepaliYearData(gregYear - 1) || nepaliYearInfo;
+        startDate = new Date(nepaliYearInfo.gregorianStartDate.year, nepaliYearInfo.gregorianStartDate.month - 1, nepaliYearInfo.gregorianStartDate.day);
+    }
+
     let nepaliYear = nepaliYearInfo.nepaliStartDate.year;
     let nepaliMonth = nepaliYearInfo.nepaliStartDate.month;
     let nepaliDay = nepaliYearInfo.nepaliStartDate.day;
-    
-    const startDate = new Date(nepaliYearInfo.gregorianStartDate.year, nepaliYearInfo.gregorianStartDate.month - 1, nepaliYearInfo.gregorianStartDate.day);
-    const targetDate = new Date(gregYear, gregMonth - 1, gregDay);
 
     const dayDifference = Math.ceil((targetDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     nepaliDay += dayDifference;
 
     let i = 0;
-    while(nepaliDay > nepaliYearInfo.daysInMonth[i]) {
-        if(nepaliYearInfo.daysInMonth[i] === 0) continue; // Should not happen with valid data
-        
+    while (nepaliDay > nepaliYearInfo.daysInMonth[i]) {
+        if (nepaliYearInfo.daysInMonth[i] === 0) continue; // Should not happen with valid data
+
         nepaliDay -= nepaliYearInfo.daysInMonth[i];
         nepaliMonth++;
         i++;
 
-        if(nepaliMonth > 12) {
+        if (nepaliMonth > 12) {
             nepaliMonth = 1;
             nepaliYear++;
             // This is a simplification. The daysInMonth for the next year would be needed.
             // For now, we'll reset `i` and use the same year's data, which is an approximation.
-            i = 0; 
+            i = 0;
         }
     }
-    
+
     // Fallback for dates outside the limited data range
-    if(nepaliYear < 2075 || nepaliYear > 2085) {
+    if (nepaliYear < 2075 || nepaliYear > 2085) {
         // Provide a reasonable estimate for current dates
         const estimatedYear = gregYear + 57;
         const estimatedMonth = (gregMonth + 8) % 12; // Very rough estimate
