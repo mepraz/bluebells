@@ -43,6 +43,8 @@ import {
 } from "@/components/ui/accordion"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ArrowUpDown, UserX } from "lucide-react"
+
 
 
 function AddStudentDialog({ classes, onStudentAdded }: { classes: Class[], onStudentAdded: () => void }) {
@@ -146,11 +148,15 @@ export default function StudentsPage() {
   const [students, setStudents] = React.useState<Student[]>([]);
   const [classes, setClasses] = React.useState<Class[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [selectedYear, setSelectedYear] = React.useState<number>(2083);
 
   const fetchData = React.useCallback(async () => {
     setLoading(true);
     try {
-        const [studentsData, classesData] = await Promise.all([getStudents(), getClasses()]);
+        const [studentsData, classesData] = await Promise.all([
+          getStudents({ academicYear: selectedYear }),
+          getClasses()
+        ]);
         setStudents(studentsData);
         setClasses(classesData);
     } catch (e) {
@@ -158,7 +164,7 @@ export default function StudentsPage() {
     } finally {
         setLoading(false);
     }
-  }, []);
+  }, [selectedYear]);
 
   React.useEffect(() => {
     fetchData();
@@ -183,8 +189,38 @@ export default function StudentsPage() {
   return (
     <div>
       <PageHeader title="Students">
-        <AddStudentDialog classes={classes} onStudentAdded={fetchData} />
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center gap-1.5 mr-2">
+            <span className="text-xs font-semibold text-muted-foreground">Year:</span>
+            <Select value={selectedYear.toString()} onValueChange={(val) => setSelectedYear(Number(val))}>
+              <SelectTrigger className="w-[90px] h-9">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2082">2082</SelectItem>
+                <SelectItem value="2083">2083</SelectItem>
+                <SelectItem value="2084">2084</SelectItem>
+                <SelectItem value="2085">2085</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/students/transfer">
+              <ArrowUpDown className="mr-2 h-4 w-4" />
+              Batch Transfer
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/students/left">
+              <UserX className="mr-2 h-4 w-4" />
+              Left Students
+            </Link>
+          </Button>
+          <AddStudentDialog classes={classes} onStudentAdded={fetchData} />
+        </div>
       </PageHeader>
+
+
 
       <Accordion type="single" collapsible className="w-full space-y-4" defaultValue={classes[0]?.id}>
          {studentsByClass.map(cls => (

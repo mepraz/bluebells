@@ -4,8 +4,10 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { connectToDatabase } from '@/lib/mongodb';
-import { Class, Student, Subject, Result, ClassFees, Invoice, InvoiceLineItem, SchoolSettings, Exam, User, PaymentTransaction, StudentBill, ClassMonthlySummary, StudentMarksheet } from '@/lib/types';
+import { Class, Student, Subject, Result, ClassFees, Invoice, InvoiceLineItem, SchoolSettings, Exam, User, PaymentTransaction, StudentBill, ClassMonthlySummary, StudentMarksheet, TransferAction } from '@/lib/types';
+import { getNepaliDate } from './nepali-date';
 import { redirect } from 'next/navigation';
+
 import { getSession, sessionOptions } from './session';
 import { cookies } from 'next/headers';
 import * as bcrypt from 'bcrypt';
@@ -240,9 +242,19 @@ export async function updateClassFees(classId: string, newFees: Partial<ClassFee
 }
 
 // --- Student Management ---
-export async function getStudents(filters: { classId?: string, name?: string } = {}): Promise<Student[]> {
+export async function getStudents(filters: { classId?: string, name?: string, status?: 'active' | 'left' | 'all', academicYear?: number } = {}): Promise<Student[]> {
   const db = await getDb();
   const query: any = {};
+  
+  // Default to non-left students (active status) unless explicitly searching for left/all
+  if (filters.status === 'left') {
+    query.status = 'left';
+  } else if (filters.status === 'all') {
+    // No status filter
+  } else {
+    query.status = { $ne: 'left' };
+  }
+
   if (filters.classId) {
     if (ObjectId.isValid(filters.classId)) {
         query.classId = new ObjectId(filters.classId);
@@ -252,6 +264,19 @@ export async function getStudents(filters: { classId?: string, name?: string } =
   }
   if (filters.name) {
     query.name = { $regex: filters.name, $options: 'i' };
+  }
+
+  if (filters.academicYear) {
+    const defaultYear = 2082;
+    if (filters.academicYear === defaultYear) {
+      // For the baseline academic year, match both explicitly set ones and legacy records where it's undefined
+      query.$or = [
+        { academicYear: filters.academicYear },
+        { academicYear: { $exists: false } }
+      ];
+    } else {
+      query.academicYear = filters.academicYear;
+    }
   }
 
   const students = await db.collection('students').find(query).sort({ rollNumber: 1, name: 1 }).toArray();
@@ -267,6 +292,8 @@ export async function getStudents(filters: { classId?: string, name?: string } =
     dob: s.dob,
     totalAttendance: s.totalAttendance,
     presentAttendance: s.presentAttendance,
+    status: s.status || 'active',
+    academicYear: s.academicYear || 2082,
   }));
 }
 
@@ -287,8 +314,11 @@ export async function getStudentById(studentId: string): Promise<Student | null>
       dob: student.dob,
       totalAttendance: student.totalAttendance,
       presentAttendance: student.presentAttendance,
+      status: student.status || 'active',
+      academicYear: student.academicYear || 2082,
     };
   }
+
   
 
 export async function addStudent(formData: FormData): Promise<void> {
@@ -300,6 +330,7 @@ export async function addStudent(formData: FormData): Promise<void> {
     const inTuition = formData.get('inTuition') === 'on';
     
     const sid = Math.floor(100000 + Math.random() * 900000).toString();
+    const currentNepaliYear = getNepaliDate(new Date()).year;
     
     const db = await getDb();
     await db.collection('students').insertOne({
@@ -310,6 +341,8 @@ export async function addStudent(formData: FormData): Promise<void> {
         address,
         openingBalance: Number(openingBalance) || 0,
         inTuition,
+        status: 'active',
+        academicYear: currentNepaliYear,
     });
 }
 
@@ -318,7 +351,7 @@ export async function updateStudent(studentId: string, formData: FormData): Prom
     
     const db = await getDb();
 
-    const updateData: Partial<Student> & { classId: ObjectId } = {
+    const updateData: any = {
         name: formData.get('name') as string,
         rollNumber: Number(formData.get('rollNumber')),
         classId: new ObjectId(formData.get('classId') as string),
@@ -326,7 +359,13 @@ export async function updateStudent(studentId: string, formData: FormData): Prom
         openingBalance: Number(formData.get('openingBalance')),
         inTuition: formData.get('inTuition') === 'on',
         dob: formData.get('dob') as string,
+        status: (formData.get('status') as string) || 'active',
     };
+
+    const academicYearInput = formData.get('academicYear');
+    if (academicYearInput) {
+      updateData.academicYear = Number(academicYearInput);
+    }
 
     // Clean up undefined fields
     Object.keys(updateData).forEach(key => (updateData[key as keyof typeof updateData] === undefined || isNaN(updateData[key as keyof typeof updateData] as number)) && delete updateData[key as keyof typeof updateData]);
@@ -336,6 +375,55 @@ export async function updateStudent(studentId: string, formData: FormData): Prom
         { $set: updateData }
     );
 }
+
+export async function batchTransferStudents(
+  actions: TransferAction[],
+  targetAcademicYear: number
+): Promise<{ success: boolean; count: number }> {
+  const db = await getDb();
+  let count = 0;
+
+  for (const action of actions) {
+    if (!ObjectId.isValid(action.studentId)) continue;
+
+    const updateFields: any = {
+      academicYear: targetAcademicYear
+    };
+
+    if (action.type === 'leave') {
+      updateFields.status = 'left';
+    } else {
+      updateFields.status = 'active';
+      if (action.type === 'upgrade' || action.type === 'jump') {
+        if (action.targetClassId && ObjectId.isValid(action.targetClassId)) {
+          updateFields.classId = new ObjectId(action.targetClassId);
+        }
+      }
+      // If action.type === 'repeat', classId remains the same!
+    }
+
+    const result = await db.collection('students').updateOne(
+      { _id: new ObjectId(action.studentId) },
+      { $set: updateFields }
+    );
+    if (result.modifiedCount > 0) {
+      count++;
+    }
+  }
+
+  return { success: true, count };
+}
+
+export async function readmitStudent(studentId: string): Promise<void> {
+  if (!ObjectId.isValid(studentId)) return;
+  const db = await getDb();
+  await db.collection('students').updateOne(
+    { _id: new ObjectId(studentId) },
+    { $set: { status: 'active' } }
+  );
+}
+
+
 
 export async function updateStudentAttendance(studentId: string, totalAttendance: number, presentAttendance: number): Promise<void> {
     if (!ObjectId.isValid(studentId)) return;

@@ -20,7 +20,16 @@ export interface Student {
   dob?: string;
   totalAttendance?: number;
   presentAttendance?: number;
+  status?: 'active' | 'left';
+  academicYear?: number;
 }
+
+export interface TransferAction {
+  studentId: string;
+  type: 'upgrade' | 'repeat' | 'jump' | 'leave';
+  targetClassId?: string;
+}
+
 
 export interface ClassFees {
   registration: number;
